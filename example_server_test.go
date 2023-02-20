@@ -1,26 +1,4 @@
-# go-milter
-
-[![GoDoc](https://godoc.org/github.com/d--j/go-milter?status.svg)](https://godoc.org/github.com/d--j/go-milter)
-![Build status](https://github.com/d--j/go-milter/actions/workflows/go.yml/badge.svg?branch=main)
-
-A Go library to write mail filters.
-
-With this library you can write both the client (MTA/SMTP-Server) and server (milter filter)
-in pure Go without sendmail's libmilter.
-
-## Features
-
-* Client & Server support milter protocol version 6 with all features. E.g.:
-  * all milter events including DATA, UNKNOWN, ABORT and QUIT NEW CONNECTION
-  * milter can skip e.g. body chunks when it does not need all chunks
-  * milter can send progress notifications when response can take some time 
-  * milter can automatically instruct the MTA which macros it needs.
-* UTF-8 support
-
-## Usage
-
-```go
-package main
+package milter_test
 
 import (
 	"log"
@@ -42,7 +20,7 @@ func (b *ExampleBackend) RcptTo(rcptTo string, esmtpArgs string, m *milter.Modif
 	return milter.RespContinue, nil
 }
 
-func main() {
+func ExampleServer() {
 	// create socket to listen on
 	socket, err := net.Listen("tcp4", "127.0.0.1:6785")
 	if err != nil {
@@ -57,7 +35,7 @@ func main() {
 		}),
 		milter.WithProtocol(milter.OptNoConnect|milter.OptNoHelo|milter.OptNoMailFrom|milter.OptNoBody|milter.OptNoHeaders|milter.OptNoEOH|milter.OptNoUnknown|milter.OptNoData),
 		milter.WithAction(milter.OptChangeFrom|milter.OptAddRcpt|milter.OptRemoveRcpt),
-		milter.WithMaroRequest(milter.StageRcpt, []milter.MacroName{milter.MacroRcptMailer}),
+		milter.WithMacroRequest(milter.StageRcpt, []milter.MacroName{milter.MacroRcptMailer}),
 	)
 	defer server.Close()
 
@@ -76,15 +54,3 @@ func main() {
 	// quit when milter quits
 	wgDone.Wait()
 }
-```
-
-See [![GoDoc](https://godoc.org/github.com/d--j/go-milter?status.svg)](https://godoc.org/github.com/d--j/go-milter) for more documentation and an example for a milter client. 
-
-## License
-
-BSD 2-Clause
-
-## Credits
-
-Based on https://github.com/emersion/go-milter by [Simon Ser](https://github.com/emersion) which is based on https://github.com/phalaaxx/milter by
-[Bozhin Zafirov](https://github.com/phalaaxx). [Max Mazurov](https://github.com/foxcpp) made major contributions to this code as well.

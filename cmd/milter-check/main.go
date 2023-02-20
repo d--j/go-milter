@@ -1,3 +1,4 @@
+// Command milter-check can be used to send test data to milters.
 package main
 
 import (
@@ -6,46 +7,49 @@ import (
 	"log"
 	"os"
 	"strings"
-	"time"
 
+	"github.com/d--j/go-milter"
+	"github.com/d--j/go-milter/milterutil"
 	"github.com/emersion/go-message/textproto"
-	"github.com/emersion/go-milter"
+	"golang.org/x/text/transform"
 )
 
 func printAction(prefix string, act *milter.Action) {
-	switch act.Code {
-	case milter.ActAccept:
+	switch act.Type {
+	case milter.ActionAccept:
 		log.Println(prefix, "accept")
-	case milter.ActReject:
+	case milter.ActionReject:
 		log.Println(prefix, "reject")
-	case milter.ActDiscard:
+	case milter.ActionDiscard:
 		log.Println(prefix, "discard")
-	case milter.ActTempFail:
+	case milter.ActionTempFail:
 		log.Println(prefix, "temp. fail")
-	case milter.ActReplyCode:
-		log.Println(prefix, "reply code:", act.SMTPCode, act.SMTPText)
-	case milter.ActContinue:
+	case milter.ActionRejectWithCode:
+		log.Println(prefix, "reply code:", act.SMTPCode, act.SMTPReply)
+	case milter.ActionContinue:
 		log.Println(prefix, "continue")
+	case milter.ActionSkip:
+		log.Println(prefix, "skip")
 	}
 }
 
 func printModifyAction(act milter.ModifyAction) {
-	switch act.Code {
-	case milter.ActAddHeader:
+	switch act.Type {
+	case milter.ActionAddHeader:
 		log.Printf("add header: name %s, value %s", act.HeaderName, act.HeaderValue)
-	case milter.ActInsertHeader:
+	case milter.ActionInsertHeader:
 		log.Printf("insert header: at %d, name %s, value %s", act.HeaderIndex, act.HeaderName, act.HeaderValue)
-	case milter.ActChangeFrom:
+	case milter.ActionChangeFrom:
 		log.Printf("change from: %s %v", act.From, act.FromArgs)
-	case milter.ActChangeHeader:
+	case milter.ActionChangeHeader:
 		log.Printf("change header: at %d, name %s, value %s", act.HeaderIndex, act.HeaderName, act.HeaderValue)
-	case milter.ActReplBody:
+	case milter.ActionReplaceBody:
 		log.Println("replace body:", string(act.Body))
-	case milter.ActAddRcpt:
+	case milter.ActionAddRcpt:
 		log.Println("add rcpt:", act.Rcpt)
-	case milter.ActDelRcpt:
+	case milter.ActionDelRcpt:
 		log.Println("del rcpt:", act.Rcpt)
-	case milter.ActQuarantine:
+	case milter.ActionQuarantine:
 		log.Println("quarantine:", act.Reason)
 	}
 }
@@ -61,26 +65,21 @@ func main() {
 	mailFrom := flag.String("from", "foxcpp@example.org", "Value to send in MAIL message")
 	rcptTo := flag.String("rcpt", "foxcpp@example.com", "Comma-separated list of values for RCPT messages")
 	actionMask := flag.Uint("actions",
-		uint(milter.OptChangeBody|milter.OptChangeFrom|milter.OptChangeHeader|
-			milter.OptAddHeader|milter.OptAddRcpt|milter.OptChangeFrom),
+		uint(milter.AllClientSupportedActionMasks),
 		"Bitmask value of actions we allow")
 	disabledMsgs := flag.Uint("disabled-msgs", 0, "Bitmask of disabled protocol messages")
 	flag.Parse()
 
-	c := milter.NewClientWithOptions(*transport, *address, milter.ClientOptions{
-		ActionMask:   milter.OptAction(*actionMask),
-		ProtocolMask: milter.OptProtocol(*disabledMsgs),
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
-	})
-	defer c.Close()
+	c := milter.NewClient(*transport, *address, milter.WithActions(milter.OptAction(*actionMask)), milter.WithProtocols(milter.OptProtocol(*disabledMsgs)))
 
-	s, err := c.Session()
+	s, err := c.Session(nil)
 	if err != nil {
 		log.Println(err)
 		return
 	}
-	defer s.Close()
+	defer func(s *milter.ClientSession) {
+		_ = s.Close()
+	}(s)
 
 	act, err := s.Conn(*hostname, milter.ProtoFamily((*family)[0]), uint16(*port), *connAddr)
 	if err != nil {
@@ -88,7 +87,7 @@ func main() {
 		return
 	}
 	printAction("CONNECT:", act)
-	if act.Code != milter.ActContinue {
+	if act.StopProcessing() {
 		return
 	}
 
@@ -98,33 +97,43 @@ func main() {
 		return
 	}
 	printAction("HELO:", act)
-	if act.Code != milter.ActContinue {
+	if act.StopProcessing() {
 		return
 	}
 
-	act, err = s.Mail(*mailFrom, nil)
+	act, err = s.Mail(*mailFrom, "")
 	if err != nil {
 		log.Println(err)
 		return
 	}
 	printAction("MAIL:", act)
-	if act.Code != milter.ActContinue {
+	if act.StopProcessing() {
 		return
 	}
 
 	for _, rcpt := range strings.Split(*rcptTo, ",") {
-		act, err = s.Rcpt(rcpt, nil)
+		act, err = s.Rcpt(rcpt, "")
 		if err != nil {
 			log.Println(err)
 			return
 		}
 		printAction("RCPT:", act)
-		if act.Code != milter.ActContinue {
+		if act.StopProcessing() {
 			return
 		}
 	}
 
-	bufR := bufio.NewReader(os.Stdin)
+	act, err = s.DataStart()
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	printAction("DATA:", act)
+	if act.StopProcessing() {
+		return
+	}
+
+	bufR := bufio.NewReader(transform.NewReader(os.Stdin, &milterutil.CrLfCanonicalizationTransformer{}))
 	hdr, err := textproto.ReadHeader(bufR)
 	if err != nil {
 		log.Println("header parse:", err)
@@ -137,7 +146,7 @@ func main() {
 		return
 	}
 	printAction("HEADER:", act)
-	if act.Code != milter.ActContinue {
+	if act.StopProcessing() {
 		return
 	}
 
