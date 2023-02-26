@@ -72,6 +72,9 @@ func RejectWithCodeAndReason(smtpCode uint16, reason string) (*Response, error) 
 		return nil, err
 	}
 	data, _, err = transform.String(&milterutil.SMTPReplyTransformer{Code: smtpCode}, data)
+	if err != nil {
+		return nil, err
+	}
 	return newResponseStr(wire.Code(wire.ActReplyCode), data)
 }
 
