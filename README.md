@@ -2,6 +2,7 @@
 
 [![GoDoc](https://godoc.org/github.com/d--j/go-milter?status.svg)](https://godoc.org/github.com/d--j/go-milter)
 ![Build status](https://github.com/d--j/go-milter/actions/workflows/go.yml/badge.svg?branch=main)
+[![Coverage Status](https://coveralls.io/repos/github/d--j/go-milter/badge.svg?branch=main)](https://coveralls.io/github/d--j/go-milter?branch=main)
 
 A Go library to write mail filters.
 
