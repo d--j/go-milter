@@ -68,7 +68,6 @@ func (p *processTestMilter) Header(name string, value string, m *Modifier) (*Res
 }
 
 func (p *processTestMilter) Headers(m *Modifier) (*Response, error) {
-	p.headers = m.Headers
 	p.headersCalled = true
 	return RespContinue, nil
 }

@@ -9,66 +9,89 @@ import (
 // MaxServerProtocolVersion is the maximum Milter protocol version implemented by the server.
 const MaxServerProtocolVersion uint32 = 6
 
-// ErrServerClosed is returned by the Server's Serve method after a call to Close.
+// ErrServerClosed is returned by the [Server]'s [Server.Serve] method after a call to [Server.Close].
 var ErrServerClosed = errors.New("milter: server closed")
 
 // Milter is an interface for milter callback handlers.
 type Milter interface {
 	// Connect is called to provide SMTP connection data for incoming message.
 	// Suppress with OptNoConnect.
+	//
+	// If this method returns an error the error will be logged and the connection will be closed.
+	// If there is a [Response] (and we did not negotiate [OptNoConnReply]) this response will be sent before closing the connection.
 	Connect(host string, family string, port uint16, addr string, m *Modifier) (*Response, error)
 
-	// Helo is called to process any HELO/EHLO related filters. Suppress with
-	// OptNoHelo.
+	// Helo is called to process any HELO/EHLO related filters. Suppress with [OptNoHelo].
+	//
+	// If this method returns an error the error will be logged and the connection will be closed.
+	// If there is a [Response] (and we did not negotiate [OptNoHeloReply]) this response will be sent before closing the connection.
 	Helo(name string, m *Modifier) (*Response, error)
 
-	// MailFrom is called to process filters on envelope FROM address. Suppress
-	// with OptNoMailFrom.
+	// MailFrom is called to process filters on envelope FROM address. Suppress with [OptNoMailFrom].
+	//
+	// If this method returns an error the error will be logged and the connection will be closed.
+	// If there is a [Response] (and we did not negotiate [OptNoMailReply]) this response will be sent before closing the connection.
 	MailFrom(from string, esmtpArgs string, m *Modifier) (*Response, error)
 
-	// RcptTo is called to process filters on envelope TO address. Suppress with
-	// OptNoRcptTo.
+	// RcptTo is called to process filters on envelope TO address. Suppress with [OptNoRcptTo].
+	//
+	// If this method returns an error the error will be logged and the connection will be closed.
+	// If there is a [Response] (and we did not negotiate [OptNoRcptReply]) this response will be sent before closing the connection.
 	RcptTo(rcptTo string, esmtpArgs string, m *Modifier) (*Response, error)
 
-	// Data is called at the beginning of the DATA command (after all RCPT TO commands).
+	// Data is called at the beginning of the DATA command (after all RCPT TO commands). Suppress with [OptNoData].
+	//
+	// If this method returns an error the error will be logged and the connection will be closed.
+	// If there is a [Response] (and we did not negotiate [OptNoDataReply]) this response will be sent before closing the connection.
 	Data(m *Modifier) (*Response, error)
 
-	// Header is called once for each header in incoming message. Suppress with
-	// OptNoHeaders.
+	// Header is called once for each header in incoming message. Suppress with [OptNoHeaders].
+	//
+	// If this method returns an error the error will be logged and the connection will be closed.
+	// If there is a [Response] (and we did not negotiate [OptNoHeaderReply]) this response will be sent before closing the connection.
 	Header(name string, value string, m *Modifier) (*Response, error)
 
-	// Headers gets called when all message headers have been processed.
-	// Suppress with OptNoEOH.
-	// h is a textproto.MIMEHeader of all collected headers.
-	// If you specified OptNoHeaders this will be of course empty.
+	// Headers gets called when all message headers have been processed. Suppress with [OptNoEOH].
+	//
+	// If this method returns an error the error will be logged and the connection will be closed.
+	// If there is a [Response] (and we did not negotiate [OptNoEOHReply]) this response will be sent before closing the connection.
 	Headers(m *Modifier) (*Response, error)
 
 	// BodyChunk is called to process next message body chunk data (up to 64KB
-	// in size). Suppress with OptNoBody. If you return RespSkip the MTA will stop
+	// in size). Suppress with [OptNoBody]. If you return [RespSkip] the MTA will stop
 	// sending more body chunks. But older MTAs do not support this and in this case there are more calls to BodyChunk.
 	// Your code should be able to handle this.
+	//
+	// If this method returns an error the error will be logged and the connection will be closed.
+	// If there is a [Response] (and we did not negotiate [OptNoBodyReply]) this response will be sent before closing the connection.
 	BodyChunk(chunk []byte, m *Modifier) (*Response, error)
 
 	// EndOfMessage is called at the end of each message. All changes to message's
 	// content & attributes must be done here.
 	// The MTA can start over with another message in the same connection but that is handled in a new Milter instance.
+	//
+	// If this method returns an error the error will be logged and the connection will be closed.
+	// If there is a [Response] this response will be sent before closing the connection.
 	EndOfMessage(m *Modifier) (*Response, error)
 
 	// Abort is called if the current message has been aborted. All message data
-	// should be reset prior to the MailFrom callback. Connection data should be
-	// preserved. Cleanup is not called before or after Abort.
+	// should be reset prior to the [Milter.MailFrom] callback. Connection data should be
+	// preserved. [Milter.Cleanup] is not called before or after Abort.
 	Abort(m *Modifier) error
 
 	// Unknown is called when the MTA got an unknown command in the SMTP connection.
+	//
+	// If this method returns an error the error will be logged and the connection will be closed.
+	// If there is a [Response] (and we did not negotiate [OptNoUnknownReply]) this response will be sent before closing the connection.
 	Unknown(cmd string, m *Modifier) (*Response, error)
 
-	// Cleanup always gets called when the Milter is about to be discarded.
+	// Cleanup always gets called when the [Milter] is about to be discarded.
 	// E.g. because the MTA closed the connection, one SMTP message was successful or there was an error.
-	// May be called more than once for a single Milter.
+	// May be called more than once for a single [Milter].
 	Cleanup()
 }
 
-// NoOpMilter is a dummy Milter implementation that does nothing.
+// NoOpMilter is a dummy [Milter] implementation that does nothing.
 type NoOpMilter struct{}
 
 var _ Milter = NoOpMilter{}
@@ -129,9 +152,9 @@ type Server struct {
 
 // NewServer creates a new milter server.
 //
-// You need to at least specify the used Milter with the option WithMilter.
-// You should also specify the actions your Milter will do. Otherwise, you cannot do any message modifications.
-// For performance reasons you should disable protocol stages that you do not need with WithProtocol.
+// You need to at least specify the used [Milter] with the option [WithMilter].
+// You should also specify the actions your [Milter] will do. Otherwise, you cannot do any message modifications.
+// For performance reasons you should disable protocol stages that you do not need with [WithProtocol].
 //
 // This function will panic when you provide invalid options.
 func NewServer(opts ...Option) *Server {
@@ -171,11 +194,13 @@ func NewServer(opts ...Option) *Server {
 
 // Serve starts the server.
 func (s *Server) Serve(ln net.Listener) error {
-	defer func(ln net.Listener) {
-		_ = ln.Close()
-	}(ln)
-
 	s.listeners = append(s.listeners, ln)
+	defer func(ln net.Listener, len int) {
+		if s.listeners[len-1] != nil {
+			_ = ln.Close()
+			s.listeners[len-1] = nil
+		}
+	}(ln, len(s.listeners))
 
 	for {
 		conn, err := ln.Accept()
@@ -204,8 +229,10 @@ func (s *Server) Close() error {
 	}
 	s.closed = true
 	for _, ln := range s.listeners {
-		if err := ln.Close(); err != nil {
-			return err
+		if ln != nil {
+			if err := ln.Close(); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

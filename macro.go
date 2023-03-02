@@ -83,7 +83,7 @@ type Macros interface {
 // A MacroBag is safe for concurrent use by multiple goroutines.
 // It has special handling for the date related macros and can be copied.
 //
-// The zero value of MacroBag is invalid. Use NewMacroBag to create an empty MacroBag.
+// The zero value of MacroBag is invalid. Use [NewMacroBag] to create an empty MacroBag.
 type MacroBag struct {
 	macros                  map[MacroName]string
 	mutex                   sync.RWMutex
@@ -138,7 +138,7 @@ func (m *MacroBag) Set(name MacroName, value string) {
 }
 
 // Copy copies the macros to a new MacroBag.
-// The time.Time values set by SetCurrentDate and SetHeaderDate do not get copied.
+// The time.Time values set by [MacroBag.SetCurrentDate] and [MacroBag.SetHeaderDate] do not get copied.
 func (m *MacroBag) Copy() *MacroBag {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()

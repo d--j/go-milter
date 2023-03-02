@@ -35,7 +35,7 @@ type Action struct {
 }
 
 // StopProcessing returns true when the milter wants to immediately stop this SMTP connection.
-// You can use SMTPReply to send as reply to the current SMTP command.
+// You can use [Action.SMTPReply] to send as reply to the current SMTP command.
 func (a Action) StopProcessing() bool {
 	return a.SMTPCode > 0
 }
@@ -111,10 +111,22 @@ type ModifyAction struct {
 	Body []byte
 
 	// Index of the header field to be changed if Type = ActionChangeHeader or Type = ActionInsertHeader.
-	// Index is 1-based and is per value of HdrName.
-	// E.g. HeaderIndex = 3 and HdrName = "DKIM-Signature" mean "change third
-	// DKIM-Signature field". Order is the same as of HeaderField calls.
-	// A HeaderIndex of 0 for Type = ActionInsertHeader has the special meaning "at the very beginning".
+	// Index is 1-based.
+	//
+	// If Type = ActionChangeHeader the index is per canonical value of HdrName.
+	// E.g. HeaderIndex = 3 and HdrName = "DKIM-Signature" mean "change third DKIM-Signature field".
+	// Order is the same as of HeaderField calls.
+	//
+	// If Type = ActionInsertHeader the index is global to all headers, 1-based and means "insert after the HeaderIndex header".
+	// A HeaderIndex of 0 has the special meaning "at the very beginning".
+	//
+	// Deleted headers (Type = ActionChangeHeader and HeaderValue == "") do not change the indexes of the other headers.
+	// They will be skipped by the MTA but still occupy their place in the header list of the MTA.
+	//
+	// In both cases when you provide an index that is bigger than allowed the header gets added at the very end of the header list.
+	// This is NOT always semantically equal to Type == ActionAddHeader.
+	// Type == ActionAddHeader may actually replace an existing header instead of adding a new one.
+	// This will only happen with MTA generated headers besides "Received", "X400-Received", "Via" and "Mail-From".
 	HeaderIndex uint32
 
 	// Header field name to be added/changed if Type == ActionAddHeader or
@@ -205,11 +217,10 @@ func parseModifyAct(msg *wire.Message) (*ModifyAction, error) {
 	return act, nil
 }
 
-// Modifier provides access to Macros and Headers to callback handlers. It also defines a
+// Modifier provides access to [Macros] to callback handlers. It also defines a
 // number of functions that can be used by callback handlers to modify processing of the email message.
-// Besides Progress() they can only be called in the EndOfMessage callback.
+// Besides [Modifier.Progress] they can only be called in the EndOfMessage callback.
 type Modifier struct {
-	Headers             textproto.MIMEHeader
 	Macros              Macros
 	writeProgressPacket func(*wire.Message) error
 	writePacket         func(*wire.Message) error
@@ -252,7 +263,7 @@ func (m *Modifier) AddRecipient(r string, esmtpArgs string) error {
 	var buffer bytes.Buffer
 	buffer.WriteString(addHats(r))
 	buffer.WriteByte(0)
-	// send wire.ActAddRcptPar when that is the only allowed action or we need to send it because esmptArgs ist set
+	// send wire.ActAddRcptPar when that is the only allowed action, or we need to send it because esmptArgs ist set
 	if (esmtpArgs != "" && m.actions&OptAddRcptWithArgs != 0) || (esmtpArgs == "" && m.actions&OptAddRcptWithArgs != 0) {
 		buffer.WriteString(esmtpArgs)
 		buffer.WriteByte(0)
@@ -298,7 +309,7 @@ func (m *Modifier) ReplaceBodyRawChunk(chunk []byte) error {
 //	wrappedR := transform.NewReader(r, t)
 //	m.ReplaceBody(wrappedR)
 //
-// This function tries to use as few calls to [ReplaceBodyRawChunk] as possible.
+// This function tries to use as few calls to [Modifier.ReplaceBodyRawChunk] as possible.
 //
 // You can call ReplaceBody multiple times. The MTA will combine all those calls into one message.
 //
@@ -398,7 +409,7 @@ func errorWriteReadOnly(m *wire.Message) error {
 	return fmt.Errorf("tried to send action %c in read-only state", m.Code)
 }
 
-// newModifier creates a new [Modifier] instance from [serverSession]
+// newModifier creates a new [Modifier] instance from s. If it is readOnly then all modification actions will throw an error.
 func newModifier(s *serverSession, readOnly bool) *Modifier {
 	writePacket := s.writePacket
 	if readOnly {
@@ -406,10 +417,20 @@ func newModifier(s *serverSession, readOnly bool) *Modifier {
 	}
 	return &Modifier{
 		Macros:              &macroReader{macrosStages: s.macros},
-		Headers:             s.headers,
 		writePacket:         writePacket,
 		writeProgressPacket: s.writePacket,
 		actions:             s.actions,
 		maxDataSize:         s.maxDataSize,
+	}
+}
+
+// NewTestModifier is only exported for unit-tests. It can only be use internally since it uses the internal package [wire].
+func NewTestModifier(macros Macros, writePacket, writeProgress func(msg *wire.Message) error, actions OptAction, maxDataSize DataSize) *Modifier {
+	return &Modifier{
+		Macros:              macros,
+		writePacket:         writePacket,
+		writeProgressPacket: writeProgress,
+		actions:             actions,
+		maxDataSize:         maxDataSize,
 	}
 }

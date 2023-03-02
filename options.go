@@ -1,6 +1,8 @@
 package milter
 
-import "time"
+import (
+	"time"
+)
 
 // NewMilterFunc is the signature of a function that can be used with [WithDynamicMilter] to configure the [Milter] backend.
 // The parameters version, action, protocol and maxData are the negotiated values.

@@ -10,9 +10,8 @@ func logWarning(format string, v ...interface{}) {
 }
 
 // LogWarning is called by this library when it wants to output a warning.
-// Warnings can happen even when the library user did everything right (because the other end did something wrong
-// but we recovered from it)
+// Warnings can happen even when the library user did everything right (because the other end did something wrong)
 //
-// The default implementation uses log.Print to output the warning.
+// The default implementation uses [log.Print] to output the warning.
 // You can re-assign LogWarning to something more suitable for your application. But do not assign nil to it.
 var LogWarning = logWarning

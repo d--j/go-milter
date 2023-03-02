@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/textproto"
 	"strings"
 
 	"github.com/d--j/go-milter/internal/wire"
@@ -23,7 +22,6 @@ type serverSession struct {
 	protocol    OptProtocol
 	maxDataSize DataSize
 	conn        net.Conn
-	headers     textproto.MIMEHeader
 	macros      *macrosStages
 	backend     Milter
 }
@@ -229,16 +227,11 @@ func (m *serverSession) Process(msg *wire.Message) (*Response, error) {
 		if len(msg.Data) < 2 {
 			return nil, fmt.Errorf("milter: header: unexpected data size: %d", len(msg.Data))
 		}
-		// make sure headers is initialized
-		if m.headers == nil {
-			m.headers = make(textproto.MIMEHeader)
-		}
 		// add new header to headers map
 		headerData := wire.DecodeCStrings(msg.Data)
 		if len(headerData) != 2 {
 			return nil, fmt.Errorf("milter: header: unexpected number of strings: %d", len(headerData))
 		}
-		m.headers.Add(headerData[0], headerData[1])
 		// call and return milter handler
 		resp, err := m.backend.Header(headerData[0], headerData[1], newModifier(m, true))
 		m.macros.DelStageAndAbove(StageEndMarker)
@@ -304,14 +297,12 @@ func (m *serverSession) Process(msg *wire.Message) (*Response, error) {
 	case wire.CodeAbort:
 		// abort current message and start over
 		err := m.backend.Abort(newModifier(m, true))
-		m.headers = nil
 		m.macros.DelStageAndAbove(StageHelo)
 		return nil, err
 
 	case wire.CodeQuitNewConn:
 		// abort current connection and start over
 		m.backend.Cleanup()
-		m.headers = nil
 		m.macros.DelStageAndAbove(StageConnect)
 		m.backend = m.newBackend()
 		// do not send response
@@ -374,6 +365,9 @@ func (m *serverSession) HandleMilterCommands() {
 			if err != errCloseSession {
 				// log error condition
 				LogWarning("Error performing milter command: %v", err)
+				if resp != nil && !m.skipResponse(msg.Code) {
+					_ = m.writePacket(resp.Response())
+				}
 			}
 			return
 		}
