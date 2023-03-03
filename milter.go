@@ -45,7 +45,7 @@ const (
 	OptNoEOHReply     OptProtocol = 1 << 18 // Milter does not send a reply to end of header event. SMFIP_NR_EOH [v6]
 	OptNoBodyReply    OptProtocol = 1 << 19 // Milter does not send a reply to body chunk event. SMFIP_NR_BODY [v6]
 
-	// OptHeaderLeadingSpace lets the Milter request that the MTA does not swallow a leading space
+	// OptHeaderLeadingSpace lets the [Milter] request that the MTA does not swallow a leading space
 	// when passing the header value to the milter.
 	// Sendmail by default eats one space (not tab) after the colon. So the header line (spaces replaced with _):
 	//   Subject:__Test
@@ -53,9 +53,9 @@ const (
 	// sends OptHeaderLeadingSpace to the MTA it requests that it wants the header value as is.
 	// So the MTA should send HeaderName "Subject" and HeaderValue "__Test".
 	//
-	// Milter that do e.g. DKIM signing may need the additional space to create valid DKIM signatures.
+	// [Milter] that do e.g. DKIM signing may need the additional space to create valid DKIM signatures.
 	//
-	// The Client and ClientSession does not handle this option. It is the responsibility of the MTA to check if the milter
+	// The [Client] and [ClientSession] does not handle this option. It is the responsibility of the MTA to check if the milter
 	// asked for this and obey this request. In the simplest case just never swallow the space.
 	//
 	// SMFIP_HDR_LEADSPC [v6]

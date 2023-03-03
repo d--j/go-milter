@@ -128,6 +128,10 @@ func (mm *MockMilter) Header(name string, value string, m *Modifier) (*Response,
 	if mm.HdrMod != nil {
 		mm.HdrMod(m)
 	}
+	if mm.Hdr == nil {
+		mm.Hdr = make(nettextproto.MIMEHeader)
+	}
+	mm.Hdr.Add(name, value)
 	return mm.HdrResp, mm.HdrErr
 }
 
@@ -135,7 +139,6 @@ func (mm *MockMilter) Headers(m *Modifier) (*Response, error) {
 	if mm.HdrsMod != nil {
 		mm.HdrsMod(m)
 	}
-	mm.Hdr = m.Headers
 	return mm.HdrsResp, mm.HdrsErr
 }
 
