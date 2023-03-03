@@ -12,6 +12,18 @@ import (
 	"github.com/d--j/go-milter"
 )
 
+// DecisionModificationFunc is the callback function that you need to implement to create a mail filter.
+//
+// ctx is a [context.Context] that might get canceled when the connection to the MTA fails while your callback is running.
+// If your decision function is running longer than one second the [MailFilter] automatically sends progress notifications
+// every second so that MTA does not time out the milter connection.
+//
+// transaction is the [Transaction] object that you can inspect to see what the [MailFilter] got as information about the current SMTP transaction.
+// You can also use transaction to modify the transaction (e.g. change recipients, alter headers).
+//
+// decision is your [Decision] about this SMTP transaction. Use [Accept], [TempFail], [Reject], [Discard] or [CustomErrorResponse].
+//
+// If you return a non-nil error [WithErrorHandling] will determine what happens with the current SMTP transaction.
 type DecisionModificationFunc func(ctx context.Context, transaction *Transaction) (decision Decision, err error)
 
 type MailFilter struct {

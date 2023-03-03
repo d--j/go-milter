@@ -27,7 +27,7 @@ const (
 type ErrorHandling int
 
 const (
-	// Error just throws the error
+	// Error just throws the error. The connection to the MTA will break and the MTA will decide what happens to the SMTP transaction.
 	Error ErrorHandling = iota
 	// AcceptWhenError accepts the transaction despite the error (it gets logged).
 	AcceptWhenError
