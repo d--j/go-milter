@@ -264,7 +264,7 @@ func (m *Modifier) AddRecipient(r string, esmtpArgs string) error {
 	buffer.WriteString(addHats(r))
 	buffer.WriteByte(0)
 	// send wire.ActAddRcptPar when that is the only allowed action, or we need to send it because esmptArgs ist set
-	if (esmtpArgs != "" && m.actions&OptAddRcptWithArgs != 0) || (esmtpArgs == "" && m.actions&OptAddRcptWithArgs != 0) {
+	if (esmtpArgs != "" && m.actions&OptAddRcptWithArgs != 0) || (esmtpArgs == "" && m.actions&OptAddRcpt == 0) {
 		buffer.WriteString(esmtpArgs)
 		buffer.WriteByte(0)
 		code = wire.ActAddRcptPar
