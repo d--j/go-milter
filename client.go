@@ -428,7 +428,7 @@ func (s *ClientSession) readAction(skipOk bool) (*Action, error) {
 		switch act.Type {
 		case ActionSkip:
 			if !skipOk {
-				return nil, fmt.Errorf("action read: unexpected skip message received (can only be received after SMFIC_BODY when SMFIP_SKIP was negotiated)")
+				return nil, fmt.Errorf("action read: unexpected skip message received (can only be received after SMFIC_RCPT, SMFIC_HEADER, SMFIC_BODY when SMFIP_SKIP was negotiated)")
 			}
 		case ActionReject:
 			act.SMTPCode = 550
@@ -507,7 +507,7 @@ func (s *ClientSession) Conn(hostname string, family ProtoFamily, port uint16, a
 //
 // It should be called once per milter session (from Client.Session to Close).
 func (s *ClientSession) Helo(helo string) (*Action, error) {
-	if s.state != clientStateConnectCalled {
+	if s.state != clientStateConnectCalled && s.state != clientStateHeloCalled {
 		return nil, s.errorOut(fmt.Errorf("milter: in wrong state %d", s.state))
 	}
 
