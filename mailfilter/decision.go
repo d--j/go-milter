@@ -44,3 +44,21 @@ func CustomErrorResponse(code uint16, reason string) Decision {
 		reason: reason,
 	}
 }
+
+type quarantineResponse struct {
+	reason string
+}
+
+func (c quarantineResponse) getCode() uint16 {
+	return 250
+}
+
+func (c quarantineResponse) getReason() string {
+	return "accept"
+}
+
+func QuarantineResponse(reason string) Decision {
+	return &quarantineResponse{
+		reason: reason,
+	}
+}

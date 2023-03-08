@@ -247,6 +247,15 @@ func TestTransaction_sendModifications(t1 *testing.T) {
 			ctx.Value("s").(*mockSession).WritePacket = writeErr
 			return Accept, nil
 		}, nil, true},
+		{"quarantine", func(ctx context.Context, trx *Transaction) (Decision, error) {
+			return QuarantineResponse("test"), nil
+		}, []*wire.Message{
+			mod(wire.ActQuarantine, []byte("test\u0000")),
+		}, false},
+		{"quarantine-err", func(ctx context.Context, trx *Transaction) (Decision, error) {
+			ctx.Value("s").(*mockSession).WritePacket = writeErr
+			return QuarantineResponse("test"), nil
+		}, nil, true},
 	}
 	for _, tt := range tests {
 		t1.Run(tt.name, func(t1 *testing.T) {
