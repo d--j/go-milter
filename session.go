@@ -414,6 +414,8 @@ func (m *serverSession) skipResponse(code wire.Code) bool {
 		return m.protocolOption(OptNoUnknownReply)
 	case wire.CodeEOH:
 		return m.protocolOption(OptNoEOHReply)
+	case wire.CodeHeader:
+		return m.protocolOption(OptNoHeaderReply)
 	case wire.CodeBody:
 		return m.protocolOption(OptNoBodyReply)
 	default:
