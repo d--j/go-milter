@@ -688,9 +688,24 @@ func (s *ClientSession) DataStart() (*Action, error) {
 	return act, nil
 }
 
+func trimLastLineBreak(in string) string {
+	l := len(in)
+	if l > 2 && in[l-2:] == "\r\n" {
+		return in[:l-2]
+	}
+	if l > 1 && in[l-1:] == "\n" {
+		return in[:l-1]
+	}
+	if l > 1 && in[l-1:] == "\r" {
+		return in[:l-1]
+	}
+	return in
+}
+
 // HeaderField sends a single header field to the milter.
 //
 // Value should be the original field value without any unfolding applied.
+// value may contain the last CR LF that ist the end marker of this header.
 //
 // HeaderEnd() must be called after the last field.
 //
@@ -718,7 +733,7 @@ func (s *ClientSession) HeaderField(key, value string, macros map[MacroName]stri
 		Code: wire.CodeHeader,
 	}
 	msg.Data = wire.AppendCString(msg.Data, key)
-	msg.Data = wire.AppendCString(msg.Data, value)
+	msg.Data = wire.AppendCString(msg.Data, trimLastLineBreak(value))
 
 	if err := s.writePacket(msg); err != nil {
 		return nil, s.errorOut(fmt.Errorf("milter: header field: %w", err))
@@ -818,11 +833,10 @@ func (s *ClientSession) BodyChunk(chunk []byte) (*Action, error) {
 	if s.state < clientStateHeaderEndCalled || s.state > clientStateBodyChunkCalled {
 		return nil, s.errorOut(fmt.Errorf("milter: body: in wrong state %d", s.state))
 	}
+	s.state = clientStateBodyChunkCalled
 	if s.skip {
 		return &Action{Type: ActionContinue}, nil
 	}
-
-	s.state = clientStateBodyChunkCalled
 
 	if s.ProtocolOption(OptNoBody) {
 		return &Action{Type: ActionContinue}, nil
@@ -886,6 +900,8 @@ func (s *ClientSession) BodyReadFrom(r io.Reader) ([]ModifyAction, *Action, erro
 		if scanner.Err() != nil {
 			return nil, nil, scanner.Err()
 		}
+	} else {
+		s.state = clientStateBodyChunkCalled
 	}
 
 	return s.End()
