@@ -336,7 +336,9 @@ func (m *serverSession) HandleMilterCommands() {
 	// first do the negotiation
 	msg, err := m.readPacket()
 	if err != nil {
-		LogWarning("Error reading milter command: %v", err)
+		if err != io.EOF {
+			LogWarning("Error reading milter command: %v", err)
+		}
 		return
 	}
 	resp, err := m.negotiate(msg, m.server.options.maxVersion, m.server.options.actions, m.server.options.protocol, m.server.options.negotiationCallback, m.server.options.macrosByStage, 0)
