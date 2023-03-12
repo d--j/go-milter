@@ -191,19 +191,29 @@ func (t *Transaction) sendModifications(m *milter.Modifier) error {
 			return err
 		}
 	}
-	changeOps, insertOps := calculateHeaderModifications(t.headers, t.Headers)
-	for _, op := range changeOps {
-		if err := m.ChangeHeader(op.Index, op.Name, op.Value); err != nil {
-			return err
-		}
-	}
-	// apply insert operations in reverse for the indexes to be correct
-	if len(insertOps) > 0 {
-		for i := len(insertOps) - 1; i > -1; i-- {
-			op := insertOps[i]
+	changeInsertOps, addOps := calculateHeaderModifications(t.headers, t.Headers)
+	// apply change/insert operations in reverse for the indexes to be correct
+	for i := len(changeInsertOps) - 1; i > -1; i-- {
+		op := changeInsertOps[i]
+		if op.Kind == kindInsert {
 			if err := m.InsertHeader(op.Index, op.Name, op.Value); err != nil {
 				return err
 			}
+		} else {
+			if err := m.ChangeHeader(op.Index, op.Name, op.Value); err != nil {
+				return err
+			}
+		}
+	}
+	for _, op := range addOps {
+		// Sendmail has headers in its envelop headers list that it does not send to the milter.
+		// But the *do* count to the insert index?! So for sendmail we cannot really add a header at a specific position.
+		// (Other than beginning, that is index 0).
+		// We add the arbitrary number 100 to the index so that we skip any and all "hidden" sendmail headers when we
+		// want to insert at the end of the header list.
+		// We do not use m.AddHeader since that also is not guaranteed to add the header at the end…
+		if err := m.InsertHeader(op.Index+len(changeInsertOps)+100, op.Name, op.Value); err != nil {
+			return err
 		}
 	}
 	if t.replacementBody != nil {

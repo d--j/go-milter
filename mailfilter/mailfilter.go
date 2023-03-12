@@ -100,6 +100,7 @@ func New(network, address string, decision DecisionModificationFunc, opts ...Opt
 				opts:         resolvedOptions,
 				decision:     decision,
 				leadingSpace: protocol&milter.OptHeaderLeadingSpace != 0,
+				transaction:  &Transaction{},
 			}
 		}),
 		milter.WithActions(actions),

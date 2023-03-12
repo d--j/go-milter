@@ -958,8 +958,8 @@ func TestHeader_addRaw(t *testing.T) {
 		args   args
 		want   []*headerField
 	}{
-		{"works", nil, args{key: "TEST", raw: "TEST: value"}, []*headerField{&headerField{canonicalKey: "Test", raw: "TEST: value"}}},
-		{"empty-is-ok", nil, args{key: "TEST", raw: "TEST:"}, []*headerField{&headerField{canonicalKey: "Test", raw: "TEST:"}}},
+		{"works", nil, args{key: "TEST", raw: "TEST: value"}, []*headerField{{canonicalKey: "Test", raw: "TEST: value"}}},
+		{"empty-is-ok", nil, args{key: "TEST", raw: "TEST:"}, []*headerField{{canonicalKey: "Test", raw: "TEST:"}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1092,37 +1092,37 @@ func Test_calculateHeaderModifications(t *testing.T) {
 		changed *Header
 	}
 	tests := []struct {
-		name          string
-		args          args
-		wantChangeOps []headerOp
-		wantInsertOps []headerOp
+		name                string
+		args                args
+		wantChangeInsertOps []headerOp
+		wantAddOps          []headerOp
 	}{
 		{"equal", args{orig, orig}, nil, nil},
-		{"add-one", args{orig, addOne}, nil, []headerOp{{Index: 4, Name: "X-Test", Value: " 1"}}},
-		{"add-one-in-front", args{orig, addOneInFront}, nil, []headerOp{{Index: 0, Name: "X-Test", Value: " 1"}}},
+		{"add-one", args{orig, addOne}, nil, []headerOp{{Index: 5, Name: "X-Test", Value: " 1"}}},
+		{"add-one-in-front", args{orig, addOneInFront}, []headerOp{{Kind: kindInsert, Index: 0, Name: "X-Test", Value: " 1"}}, nil},
 		{"complex", args{orig, complexChanges}, []headerOp{
-			{Index: 1, Name: "subject", Value: " changed"},
-			{Index: 1, Name: "DATE", Value: ""},
+			{Kind: kindInsert, Index: 0, Name: "X-Test", Value: " 1"},
+			{Kind: kindInsert, Index: 2, Name: "X-Test", Value: " 1"},
+			{Kind: kindInsert, Index: 2, Name: "X-Test", Value: " 1"},
+			{Kind: kindInsert, Index: 3, Name: "X-Test", Value: " 1"},
+			{Kind: kindInsert, Index: 3, Name: "X-Test", Value: " 1"},
+			{Kind: kindChange, Index: 1, Name: "subject", Value: " changed"},
+			{Kind: kindInsert, Index: 4, Name: "X-Test", Value: " 1"},
+			{Kind: kindInsert, Index: 4, Name: "X-Test", Value: " 1"},
+			{Kind: kindChange, Index: 1, Name: "DATE", Value: ""},
 		}, []headerOp{
-			{Index: 0, Name: "X-Test", Value: " 1"},
-			{Index: 1, Name: "X-Test", Value: " 1"},
-			{Index: 1, Name: "X-Test", Value: " 1"},
-			{Index: 2, Name: "X-Test", Value: " 1"},
-			{Index: 2, Name: "X-Test", Value: " 1"},
-			{Index: 3, Name: "X-Test", Value: " 1"},
-			{Index: 3, Name: "X-Test", Value: " 1"},
-			{Index: 4, Name: "X-Test", Value: " 1"},
-			{Index: 4, Name: "X-Test", Value: " 1"},
+			{Index: 5, Name: "X-Test", Value: " 1"},
+			{Index: 5, Name: "X-Test", Value: " 1"},
 		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotChangeOps, gotInsertOps := calculateHeaderModifications(tt.args.orig, tt.args.changed)
-			if !reflect.DeepEqual(gotChangeOps, tt.wantChangeOps) {
-				t.Errorf("calculateHeaderModifications() gotChangeOps = %+v, want %+v", gotChangeOps, tt.wantChangeOps)
+			gotChangeInsertOps, gotAddOps := calculateHeaderModifications(tt.args.orig, tt.args.changed)
+			if !reflect.DeepEqual(gotChangeInsertOps, tt.wantChangeInsertOps) {
+				t.Errorf("calculateHeaderModifications() gotChangeInsertOps = %+v, want %+v", gotChangeInsertOps, tt.wantChangeInsertOps)
 			}
-			if !reflect.DeepEqual(gotInsertOps, tt.wantInsertOps) {
-				t.Errorf("calculateHeaderModifications() gotInsertOps = %+v, want %+v", gotInsertOps, tt.wantInsertOps)
+			if !reflect.DeepEqual(gotAddOps, tt.wantAddOps) {
+				t.Errorf("calculateHeaderModifications() gotAddOps = %+v, want %+v", gotAddOps, tt.wantAddOps)
 			}
 		})
 	}
