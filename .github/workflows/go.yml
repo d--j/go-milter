@@ -31,3 +31,9 @@ jobs:
         uses: shogo82148/actions-goveralls@v1
         with:
           path-to-profile: profile.cov
+
+      - name: Install Postfix
+        run: sudo -n -- apt-get update -q && sudo -n -- apt-get install -y postfix sasl2-bin libsasl2-2 libsasl2-modules ssl-cert cpio courier-authlib
+
+      - name: Integration Test
+        run: cd integration && SKIP_POSTFIX_AUTH=1 go run github.com/d--j/go-milter/integration/runner ./tests

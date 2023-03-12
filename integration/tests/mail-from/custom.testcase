@@ -1,0 +1,3 @@
+FROM <custom@example.com>
+DECISION CUSTOM@FROM
+555 custom

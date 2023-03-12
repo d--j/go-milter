@@ -1,0 +1,9 @@
+FROM <add@example.com>
+BODY
+one
+.
+DECISION ACCEPT
+BODY
+one
+two
+.

@@ -1,0 +1,21 @@
+FROM <multi@example.com>
+HEADER
+From: <>
+To: <to@example.com>
+Subject: test
+Date: Fri, 10 Mar 2023 23:29:35 +0000 (UTC)
+Message-ID: <id@example.com>
+.
+DECISION ACCEPT
+HEADER
+X-First1: Test
+X-First2: Test
+Received: placeholder
+From: <>
+To: <to@example.com>
+X-Before-DATE: Test
+Date: Fri, 10 Mar 2023 23:29:35 +0000 (UTC)
+Message-ID: <id@example.com>
+X-ADD1: Test
+X-ADD2: Test
+.
