@@ -1,0 +1,2 @@
+FROM <reject@example.com>
+DECISION REJECT@FROM

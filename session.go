@@ -336,7 +336,9 @@ func (m *serverSession) HandleMilterCommands() {
 	// first do the negotiation
 	msg, err := m.readPacket()
 	if err != nil {
-		LogWarning("Error reading milter command: %v", err)
+		if err != io.EOF {
+			LogWarning("Error reading milter command: %v", err)
+		}
 		return
 	}
 	resp, err := m.negotiate(msg, m.server.options.maxVersion, m.server.options.actions, m.server.options.protocol, m.server.options.negotiationCallback, m.server.options.macrosByStage, 0)
@@ -414,6 +416,8 @@ func (m *serverSession) skipResponse(code wire.Code) bool {
 		return m.protocolOption(OptNoUnknownReply)
 	case wire.CodeEOH:
 		return m.protocolOption(OptNoEOHReply)
+	case wire.CodeHeader:
+		return m.protocolOption(OptNoHeaderReply)
 	case wire.CodeBody:
 		return m.protocolOption(OptNoBodyReply)
 	default:

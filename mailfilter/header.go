@@ -350,11 +350,9 @@ func diffHeaderFieldsMiddle(orig []*headerField, changed []*headerField, index i
 		if o.index < 0 {
 			panic("internal structure error: all elements in orig need to have an index bigger than -1: do not completely replace transaction.Headers – use its methods to alter it")
 		}
-		found := false
-		// find o in changed
+		// find o.index in changed
 		for i, c := range changed {
 			if c.index == o.index {
-				found = true
 				index = o.index
 				changedI = i
 				for i = 0; i < changedI; i++ {
@@ -386,20 +384,8 @@ func diffHeaderFieldsMiddle(orig []*headerField, changed []*headerField, index i
 				changedI++
 				break
 			} else if c.index > o.index {
-				break
+				panic("internal structure error: index of original was not found in changed: do not completely replace transaction.Headers – use its methods to alter it")
 			}
-		}
-		// if o not in changed we need to delete it
-		if !found {
-			diffs = append(diffs, headerFieldDiff{
-				kind: kindChange,
-				field: &headerField{
-					index:        o.index,
-					canonicalKey: o.canonicalKey,
-					raw:          o.key() + ":",
-				},
-				index: o.index,
-			})
 		}
 		// we only consumed the first element of orig
 		index++
@@ -447,6 +433,7 @@ func diffHeaderFields(orig []*headerField, changed []*headerField, index int) (d
 }
 
 type headerOp struct {
+	Kind  int
 	Index int
 	Name  string
 	Value string
@@ -455,7 +442,7 @@ type headerOp struct {
 // calculateHeaderModifications finds differences between orig and changed.
 // The differences are expressed as change and insert operations – to be mapped to milter modification actions.
 // Deletions are changes to an empty value.
-func calculateHeaderModifications(orig *Header, changed *Header) (changeOps []headerOp, insertOps []headerOp) {
+func calculateHeaderModifications(orig *Header, changed *Header) (changeInsertOps []headerOp, addOps []headerOp) {
 	origFields := orig.Fields()
 	origLen := origFields.Len()
 	origIndexByKeyCounter := make(map[string]int)
@@ -468,20 +455,34 @@ func calculateHeaderModifications(orig *Header, changed *Header) (changeOps []he
 	for _, diff := range diffs {
 		switch diff.kind {
 		case kindInsert:
-			insertOps = append(insertOps, headerOp{
-				Index: diff.index + 1,
-				Name:  diff.field.key(),
-				Value: diff.field.value(),
-			})
+			idx := diff.index + 1
+			if idx > 0 {
+				idx += 1
+			}
+			if idx-1 >= origLen {
+				addOps = append(addOps, headerOp{
+					Index: idx,
+					Name:  diff.field.key(),
+					Value: diff.field.value(),
+				})
+			} else {
+				changeInsertOps = append(changeInsertOps, headerOp{
+					Kind:  kindInsert,
+					Index: idx,
+					Name:  diff.field.key(),
+					Value: diff.field.value(),
+				})
+			}
 		case kindChange:
 			if diff.index < origLen {
-				changeOps = append(changeOps, headerOp{
+				changeInsertOps = append(changeInsertOps, headerOp{
+					Kind:  kindChange,
 					Index: origIndexByKey[diff.index],
 					Name:  diff.field.key(),
 					Value: diff.field.value(),
 				})
-			} else { // should not happen but just make inserts out of it
-				insertOps = append(insertOps, headerOp{
+			} else { // should not happen but just make adds out of it
+				addOps = append(addOps, headerOp{
 					Index: diff.index + 1,
 					Name:  diff.field.key(),
 					Value: diff.field.value(),

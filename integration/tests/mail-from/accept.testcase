@@ -1,0 +1,3 @@
+FROM <allowed@example.com>
+DECISION ACCEPT
+FROM <allowed@example.com> *

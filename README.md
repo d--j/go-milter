@@ -19,6 +19,7 @@ A Go library to write mail filters.
   * milter can skip e.g. body chunks when it does not need all chunks
   * milter can send progress notifications when response can take some time 
   * milter can automatically instruct the MTA which macros it needs.
+* Automatic [integration tests](integration/README.md) that test the compatibility with Postfix and Sendmail.
 
 ## Installation
 

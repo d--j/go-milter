@@ -64,14 +64,15 @@ type Transaction struct {
 	// Only populated if [WithDecisionAt] is bigger than [DecisionAtData].
 	Headers *Header
 
-	hasDecision     bool
-	decision        Decision
-	decisionErr     error
-	headers         *Header
-	body            *os.File
-	mailFrom        MailFrom
-	rcptTos         []RcptTo
-	replacementBody io.Reader
+	hasDecision      bool
+	decision         Decision
+	decisionErr      error
+	headers          *Header
+	body             *os.File
+	mailFrom         MailFrom
+	rcptTos          []RcptTo
+	replacementBody  io.Reader
+	quarantineReason *string
 }
 
 func (t *Transaction) cleanup() {
@@ -79,14 +80,8 @@ func (t *Transaction) cleanup() {
 	t.headers = nil
 	t.RcptTos = nil
 	t.rcptTos = nil
-	if t.replacementBody != nil {
-		if closer, ok := t.replacementBody.(io.Closer); ok {
-			if err := closer.Close(); err != nil {
-				milter.LogWarning("error while closing replacement body: %s", err)
-			}
-		}
-		t.replacementBody = nil
-	}
+	t.quarantineReason = nil
+	t.closeReplacementBody()
 	if t.body != nil {
 		_ = t.body.Close()
 		_ = os.Remove(t.body.Name())
@@ -134,6 +129,12 @@ func (t *Transaction) makeDecision(ctx context.Context, decide DecisionModificat
 	d, err := decide(ctx, t)
 	// save decision
 	t.hasDecision = true
+	// if QuarantineResponse was used, replace it with Accept and record the reason,
+	// so we can later send a quarantine modification action
+	if qR, ok := d.(*quarantineResponse); ok {
+		t.quarantineReason = &qR.reason
+		d = Accept
+	}
 	t.decision = d
 	t.decisionErr = err
 }
@@ -142,6 +143,9 @@ func (t *Transaction) makeDecision(ctx context.Context, decide DecisionModificat
 func (t *Transaction) hasModifications() bool {
 	if !t.hasDecision {
 		return false
+	}
+	if t.quarantineReason != nil {
+		return true
 	}
 	if t.mailFrom.Addr != t.MailFrom.Addr || t.mailFrom.Args != t.MailFrom.Args {
 		return true
@@ -187,31 +191,41 @@ func (t *Transaction) sendModifications(m *milter.Modifier) error {
 			return err
 		}
 	}
-	changeOps, insertOps := calculateHeaderModifications(t.headers, t.Headers)
-	for _, op := range changeOps {
-		if err := m.ChangeHeader(op.Index, op.Name, op.Value); err != nil {
-			return err
-		}
-	}
-	// apply insert operations in reverse for the indexes to be correct
-	if len(insertOps) > 0 {
-		for i := len(insertOps) - 1; i > -1; i-- {
-			op := insertOps[i]
+	changeInsertOps, addOps := calculateHeaderModifications(t.headers, t.Headers)
+	// apply change/insert operations in reverse for the indexes to be correct
+	for i := len(changeInsertOps) - 1; i > -1; i-- {
+		op := changeInsertOps[i]
+		if op.Kind == kindInsert {
 			if err := m.InsertHeader(op.Index, op.Name, op.Value); err != nil {
+				return err
+			}
+		} else {
+			if err := m.ChangeHeader(op.Index, op.Name, op.Value); err != nil {
 				return err
 			}
 		}
 	}
+	for _, op := range addOps {
+		// Sendmail has headers in its envelop headers list that it does not send to the milter.
+		// But the *do* count to the insert index?! So for sendmail we cannot really add a header at a specific position.
+		// (Other than beginning, that is index 0).
+		// We add the arbitrary number 100 to the index so that we skip any and all "hidden" sendmail headers when we
+		// want to insert at the end of the header list.
+		// We do not use m.AddHeader since that also is not guaranteed to add the header at the end…
+		if err := m.InsertHeader(op.Index+len(changeInsertOps)+100, op.Name, op.Value); err != nil {
+			return err
+		}
+	}
 	if t.replacementBody != nil {
 		defer func() {
-			if closer, ok := t.replacementBody.(io.Closer); ok {
-				if err := closer.Close(); err != nil {
-					milter.LogWarning("error while closing replacement body: %s", err)
-				}
-			}
-			t.replacementBody = nil
+			t.closeReplacementBody()
 		}()
 		if err := m.ReplaceBody(t.replacementBody); err != nil {
+			return err
+		}
+	}
+	if t.quarantineReason != nil {
+		if err := m.Quarantine(*t.quarantineReason); err != nil {
 			return err
 		}
 	}
@@ -304,5 +318,17 @@ func (t *Transaction) Body() io.ReadSeeker {
 // ReplaceBody replaces the body of the current message with the contents
 // of the [io.Reader] r.
 func (t *Transaction) ReplaceBody(r io.Reader) {
+	t.closeReplacementBody()
 	t.replacementBody = r
+}
+
+func (t *Transaction) closeReplacementBody() {
+	if t.replacementBody != nil {
+		if closer, ok := t.replacementBody.(io.Closer); ok {
+			if err := closer.Close(); err != nil {
+				milter.LogWarning("error while closing replacement body: %s", err)
+			}
+		}
+		t.replacementBody = nil
+	}
 }

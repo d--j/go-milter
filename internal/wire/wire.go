@@ -115,9 +115,7 @@ func WritePacket(conn net.Conn, msg *Message, timeout time.Duration) error {
 		return fmt.Errorf("milter: cannot write %d bytes in one message", length)
 	}
 
-	header := [5]byte{0, 0, 0, 0, byte(msg.Code)}
-	binary.BigEndian.PutUint32(header[0:], uint32(length))
-	_, err := conn.Write(header[:])
+	_, err := conn.Write([]byte{byte(length >> 24), byte(length >> 16), byte(length >> 8), byte(length), byte(msg.Code)})
 	if err != nil {
 		return err
 	}

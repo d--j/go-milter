@@ -1,12 +1,12 @@
 package mailfilter
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/d--j/go-milter"
-	"golang.org/x/net/context"
 )
 
 type backend struct {

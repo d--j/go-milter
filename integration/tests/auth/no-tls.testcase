@@ -1,0 +1,4 @@
+AUTH user1@example.com
+FROM <user1@example.com>
+DECISION CUSTOM@FROM
+500 No starttls

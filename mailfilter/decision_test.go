@@ -109,3 +109,30 @@ func Test_decision_getReason(t *testing.T) {
 		})
 	}
 }
+
+func TestQuarantineResponse(t *testing.T) {
+	type args struct {
+		reason string
+	}
+	tests := []struct {
+		name string
+		args args
+		want Decision
+	}{
+		{"works", args{"reason"}, &quarantineResponse{reason: "reason"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := QuarantineResponse(tt.args.reason)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("QuarantineResponse() = %v, want %v", got, tt.want)
+			}
+			if got.getCode() != Accept.getCode() {
+				t.Errorf("QuarantineResponse().getCode() = %v, want %v", got.getCode(), Accept.getCode())
+			}
+			if got.getReason() != Accept.getReason() {
+				t.Errorf("QuarantineResponse().getReason() = %v, want %v", got.getReason(), Accept.getReason())
+			}
+		})
+	}
+}

@@ -1,0 +1,4 @@
+STARTTLS
+FROM <user1@example.com>
+DECISION CUSTOM@FROM
+501 No authentication

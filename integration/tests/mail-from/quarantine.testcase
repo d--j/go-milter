@@ -1,0 +1,2 @@
+FROM <quarantine@example.com>
+DECISION DISCARD-OR-QUARANTINE

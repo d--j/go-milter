@@ -1,0 +1,61 @@
+compatibility_level=2
+
+myhostname   = mx.example.com
+mydomain     = localhost
+myorigin     = localhost
+mynetworks   = 127.0.0.0/8 [::ffff:127.0.0.0]/104 [::1]/128 0.0.0.0/0 [::]/0
+smtpd_banner = $myhostname ESMTP $mail_name (Integration Test)
+
+inet_protocols = ipv4
+inet_interfaces = 127.0.0.1
+
+# No local delivery:
+mydestination =
+local_transport = error:5.1.1 Mailbox unavailable
+alias_database =
+alias_maps =
+local_recipient_maps =
+
+# Everything goes back to relay
+relayhost = [127.0.0.1]:%{RECEIVER_PORT}
+smtpd_relay_restrictions = permit_mynetworks, reject
+smtpd_recipient_restrictions = permit_mynetworks, reject
+
+# Various
+biff = no
+append_dot_mydomain = no
+readme_directory = no
+recipient_delimiter = +
+smtputf8_enable = yes
+
+# TLS
+smtpd_use_tls = yes
+smtpd_tls_security_level = may
+smtpd_tls_dh1024_param_file = $config_directory/dhparam.pem
+smtpd_tls_cert_file = $config_directory/cert.pem
+smtpd_tls_key_file = $config_directory/key.pem
+smtpd_tls_mandatory_protocols=!SSLv2,!SSLv3
+smtp_tls_mandatory_protocols=!SSLv2,!SSLv3
+
+#SASL
+smtpd_sasl_type = cyrus
+cyrus_sasl_config_path = $config_directory/sasl
+smtpd_sasl_path = smtpd
+smtpd_sasl_auth_enable = yes
+smtpd_sasl_local_domain = example.com
+smtpd_sasl_security_options = noanonymous
+
+# Milter
+smtpd_milters = inet:127.0.0.1:%{MILTER_PORT}
+non_smtpd_milters = inet:127.0.0.1:%{MILTER_PORT}
+milter_protocol = 6
+milter_mail_macros = i {mail_addr} {client_addr} {client_name} {auth_authen}
+milter_default_action = reject
+
+data_directory = %{SCRATCH_DIR}/data
+queue_directory = %{SCRATCH_DIR}/queue
+
+maillog_file = /dev/stdout
+sendmail_path = /usr/lib/sendmail
+debug_peer_list = 127.0.0.1
+debug_peer_level = 4

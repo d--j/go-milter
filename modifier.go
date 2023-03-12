@@ -114,19 +114,15 @@ type ModifyAction struct {
 	// Index is 1-based.
 	//
 	// If Type = ActionChangeHeader the index is per canonical value of HdrName.
-	// E.g. HeaderIndex = 3 and HdrName = "DKIM-Signature" mean "change third DKIM-Signature field".
+	// E.g. HeaderIndex = 3 and HdrName = "DKIM-Signature" mean "change third field with the canonical header name Dkim-Signature".
 	// Order is the same as of HeaderField calls.
 	//
 	// If Type = ActionInsertHeader the index is global to all headers, 1-based and means "insert after the HeaderIndex header".
 	// A HeaderIndex of 0 has the special meaning "at the very beginning".
 	//
-	// Deleted headers (Type = ActionChangeHeader and HeaderValue == "") do not change the indexes of the other headers.
-	// They will be skipped by the MTA but still occupy their place in the header list of the MTA.
-	//
-	// In both cases when you provide an index that is bigger than allowed the header gets added at the very end of the header list.
-	// This is NOT always semantically equal to Type == ActionAddHeader.
-	// Type == ActionAddHeader may actually replace an existing header instead of adding a new one.
-	// This will only happen with MTA generated headers besides "Received", "X400-Received", "Via" and "Mail-From".
+	// Deleted headers (Type = ActionChangeHeader and HeaderValue == "") may change the indexes of the other headers.
+	// Postfix MTA removes the header from the linked list (and thus change the indexes of headers coming after the deleted header).
+	// Sendmail on the other hand will only mark the header as deleted.
 	HeaderIndex uint32
 
 	// Header field name to be added/changed if Type == ActionAddHeader or
@@ -327,7 +323,23 @@ func (m *Modifier) ReplaceBody(r io.Reader) error {
 	return scanner.Err()
 }
 
+// Quarantine a message by giving a reason to hold it
+func (m *Modifier) Quarantine(reason string) error {
+	if m.actions&OptQuarantine == 0 {
+		return ErrModificationNotAllowed
+	}
+	return m.writePacket(newResponse(wire.Code(wire.ActQuarantine), []byte(reason+"\x00")).Response())
+}
+
 // AddHeader appends a new email message header to the message
+//
+// Unfortunately when interacting with Sendmail it is not guaranteed that the header
+// will be added at the end. If Sendmail has a (maybe deleted) header of the same name
+// in the list of headers, this header will be altered/re-used instead of adding a new
+// header at the end.
+//
+// If you always want to add the header at the very end you need to use InsertHeader with
+// a very high index.
 func (m *Modifier) AddHeader(name, value string) error {
 	if m.actions&OptAddHeader == 0 {
 		return ErrModificationNotAllowed
@@ -340,16 +352,10 @@ func (m *Modifier) AddHeader(name, value string) error {
 	return m.writePacket(newResponse(wire.Code(wire.ActAddHeader), buffer.Bytes()).Response())
 }
 
-// Quarantine a message by giving a reason to hold it
-func (m *Modifier) Quarantine(reason string) error {
-	if m.actions&OptQuarantine == 0 {
-		return ErrModificationNotAllowed
-	}
-	return m.writePacket(newResponse(wire.Code(wire.ActQuarantine), []byte(reason+"\x00")).Response())
-}
-
 // ChangeHeader replaces the header at the specified position with a new one.
-// The index is per name. To delete a header pass an empty value.
+// The index is per canonical name and one-based. To delete a header pass an empty value.
+// If the index is bigger than there are headers with that name, then ChangeHeader will actually
+// add a new header at the end of the header list (With the same semantic as AddHeader).
 func (m *Modifier) ChangeHeader(index int, name, value string) error {
 	if m.actions&OptChangeHeader == 0 {
 		return ErrModificationNotAllowed
@@ -365,8 +371,12 @@ func (m *Modifier) ChangeHeader(index int, name, value string) error {
 	return m.writePacket(newResponse(wire.Code(wire.ActChangeHeader), buffer.Bytes()).Response())
 }
 
-// InsertHeader inserts the header at the specified position
-// index is 1 based. The index 0 means at the very beginning.
+// InsertHeader inserts the header at the specified position.
+// index is one-based. The index 0 means at the very beginning.
+//
+// Unfortunately when interacting with Sendmail the index is used to find the position
+// in Sendmail's internal list of headers. Not all of those internal headers get send to the milter.
+// Thus, you cannot really add a header at a specific position when the milter client is Sendmail.
 func (m *Modifier) InsertHeader(index int, name, value string) error {
 	// Insert header does not have its own action flag
 	if m.actions&OptChangeHeader == 0 && m.actions&OptAddHeader == 0 {

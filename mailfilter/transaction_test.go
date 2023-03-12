@@ -215,7 +215,7 @@ func TestTransaction_sendModifications(t1 *testing.T) {
 			trx.Headers.Add("X-Test", "1")
 			return Accept, nil
 		}, []*wire.Message{
-			mod(wire.ActInsertHeader, []byte("\u0000\u0000\u0000\u0003X-Test\u0000 1\u0000")),
+			mod(wire.ActInsertHeader, []byte("\u0000\u0000\u0000\x68X-Test\u0000 1\u0000")),
 		}, false},
 		{"prepend-header", func(_ context.Context, trx *Transaction) (Decision, error) {
 			f := trx.Headers.Fields()
@@ -246,6 +246,15 @@ func TestTransaction_sendModifications(t1 *testing.T) {
 			f.SetAddressList([]*mail.Address{{Address: "root@localhost", Name: "root"}})
 			ctx.Value("s").(*mockSession).WritePacket = writeErr
 			return Accept, nil
+		}, nil, true},
+		{"quarantine", func(ctx context.Context, trx *Transaction) (Decision, error) {
+			return QuarantineResponse("test"), nil
+		}, []*wire.Message{
+			mod(wire.ActQuarantine, []byte("test\u0000")),
+		}, false},
+		{"quarantine-err", func(ctx context.Context, trx *Transaction) (Decision, error) {
+			ctx.Value("s").(*mockSession).WritePacket = writeErr
+			return QuarantineResponse("test"), nil
 		}, nil, true},
 	}
 	for _, tt := range tests {

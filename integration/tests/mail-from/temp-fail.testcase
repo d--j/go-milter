@@ -1,0 +1,2 @@
+FROM <temp-fail@example.com>
+DECISION TEMPFAIL@FROM
