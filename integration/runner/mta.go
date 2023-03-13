@@ -27,7 +27,7 @@ type MTA struct {
 
 func NewMTA(path string, port uint16, config *Config) (*MTA, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	tagsCmd := exec.CommandContext(ctx, path, "tags")
+	tagsCmd := exec.CommandContext(ctx, "sh", path, "tags")
 	out, err := tagsCmd.Output()
 	cancel()
 	if err != nil {
@@ -65,16 +65,12 @@ func (m *MTA) MarkFailedTest() {
 }
 
 func (m *MTA) Start() error {
-	err := os.Chmod(m.path, 0755)
-	if err != nil {
-		return err
-	}
 	m.dir = path.Join(m.config.ScratchDir, fmt.Sprintf("mta-%d", m.Port))
-	err = os.Mkdir(m.dir, 0755)
+	err := os.Mkdir(m.dir, 0755)
 	if err != nil && !os.IsExist(err) {
 		return err
 	}
-	m.cmd = exec.Command(m.path, "start",
+	m.cmd = exec.Command("sh", m.path, "start",
 		"-mtaPort", fmt.Sprintf("%d", m.Port),
 		"-receiverPort", fmt.Sprintf("%d", m.config.ReceiverPort),
 		"-milterPort", fmt.Sprintf("%d", m.config.MilterPort),
@@ -120,7 +116,7 @@ func (m *MTA) Start() error {
 func (m *MTA) Stop() {
 	m.once.Do(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-		b, _ := exec.CommandContext(ctx, m.path, "stop",
+		b, _ := exec.CommandContext(ctx, "sh", m.path, "stop",
 			"-mtaPort", fmt.Sprintf("%d", m.Port),
 			"-receiverPort", fmt.Sprintf("%d", m.config.ReceiverPort),
 			"-milterPort", fmt.Sprintf("%d", m.config.MilterPort),
