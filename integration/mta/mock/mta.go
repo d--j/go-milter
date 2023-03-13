@@ -425,8 +425,8 @@ func splitHeaders(headerBytes []byte) (fields []*field) {
 		nextEnd += 2
 		s = append(s, string(headerBytes[i:i+nextEnd]))
 		var peek byte
-		if i+nextEnd+1 < len(headerBytes) {
-			peek = headerBytes[i+nextEnd+1]
+		if i+nextEnd < len(headerBytes) {
+			peek = headerBytes[i+nextEnd]
 		}
 		continuation = peek == ' ' || peek == '\t'
 		if !continuation {

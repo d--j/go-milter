@@ -5,6 +5,17 @@ To: <to@example.com>
 Subject: test
 Date: Fri, 10 Mar 2023 23:29:35 +0000 (UTC)
 Message-ID: <id@example.com>
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=example.com;
+ s=20210705; t=1678734964;
+ bh=5/GMrdce0c+dcQGJ6MVXtmaDh+2N+HnEGwUws8QrPMQ=;
+ h=Message-ID:Date:MIME-Version:To:Reply-To:From:Subject:
+ Content-Type;
+ b=baodyiISY2B2f6zhm1j3Ah1ffO1UHIF7OBixrrReKYWelrcsdmynT9Gzu2i3pP+TF
+ Yyl0y/oiiKLgho8IDo/yposcy3LdyLD3AFfqyY+eEciaZT8S11F+cKGS37SKMJNSdC
+ JUV2N9q0DaawOxxiVudgfOqSosjrHKM0DfFX2vBQvhqls4j+SbqFyyOiGrylgmfALu
+ ZHB3pm9qoD1XdCkX/03Fce5RoTj3SLZHBdBlrd+jDcMPYlxkb22oRzUQuiMovWyo9d
+ kzbBbcm1ScHoDZAj7HRaaFI8G4/gCbsPePUDNZf3EPle3HUMKuGY8nhOCNRol00/6B
+ DUjfggp+BBAag==
 .
 DECISION ACCEPT
 HEADER
@@ -16,4 +27,15 @@ To: <to@example.com>
 Subject: test
 Date: Fri, 10 Mar 2023 23:29:35 +0000 (UTC)
 Message-ID: <id@example.com>
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=example.com;
+ s=20210705; t=1678734964;
+ bh=5/GMrdce0c+dcQGJ6MVXtmaDh+2N+HnEGwUws8QrPMQ=;
+ h=Message-ID:Date:MIME-Version:To:Reply-To:From:Subject:
+ Content-Type;
+ b=baodyiISY2B2f6zhm1j3Ah1ffO1UHIF7OBixrrReKYWelrcsdmynT9Gzu2i3pP+TF
+ Yyl0y/oiiKLgho8IDo/yposcy3LdyLD3AFfqyY+eEciaZT8S11F+cKGS37SKMJNSdC
+ JUV2N9q0DaawOxxiVudgfOqSosjrHKM0DfFX2vBQvhqls4j+SbqFyyOiGrylgmfALu
+ ZHB3pm9qoD1XdCkX/03Fce5RoTj3SLZHBdBlrd+jDcMPYlxkb22oRzUQuiMovWyo9d
+ kzbBbcm1ScHoDZAj7HRaaFI8G4/gCbsPePUDNZf3EPle3HUMKuGY8nhOCNRol00/6B
+ DUjfggp+BBAag==
 .
