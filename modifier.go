@@ -224,20 +224,22 @@ type Modifier struct {
 	maxDataSize         DataSize
 }
 
-func hasHats(str string) bool {
+func hasAngle(str string) bool {
 	return len(str) > 1 && str[0] == '<' && str[len(str)-1] == '>'
 }
 
-func addHats(str string) string {
-	if hasHats(str) {
+// AddAngle adds <> to an address. If str already has <>, then str is returned unchanged.
+func AddAngle(str string) string {
+	if hasAngle(str) {
 		return str
 	} else {
 		return fmt.Sprintf("<%s>", str)
 	}
 }
 
-func removeHats(str string) string {
-	if hasHats(str) {
+// RemoveAngle removes <> from an address. If str does not have <>, then str is returned unchanged.
+func RemoveAngle(str string) string {
+	if hasAngle(str) {
 		return str[1 : len(str)-1]
 	} else {
 		return str
@@ -248,6 +250,8 @@ var ErrModificationNotAllowed = errors.New("milter: modification not allowed via
 
 // AddRecipient appends a new envelope recipient for current message.
 // You can optionally specify esmtpArgs to pass along. You need to negotiate this via [OptAddRcptWithArgs] with the MTA.
+//
+// Sendmail will validate the provided esmtpArgs and if it deems them invalid it will error out.
 func (m *Modifier) AddRecipient(r string, esmtpArgs string) error {
 	if m.actions&OptAddRcpt == 0 && m.actions&OptAddRcptWithArgs == 0 {
 		return ErrModificationNotAllowed
@@ -257,7 +261,7 @@ func (m *Modifier) AddRecipient(r string, esmtpArgs string) error {
 	}
 	code := wire.ActAddRcpt
 	var buffer bytes.Buffer
-	buffer.WriteString(addHats(r))
+	buffer.WriteString(AddAngle(r))
 	buffer.WriteByte(0)
 	// send wire.ActAddRcptPar when that is the only allowed action, or we need to send it because esmptArgs ist set
 	if (esmtpArgs != "" && m.actions&OptAddRcptWithArgs != 0) || (esmtpArgs == "" && m.actions&OptAddRcpt == 0) {
@@ -273,7 +277,7 @@ func (m *Modifier) DeleteRecipient(r string) error {
 	if m.actions&OptRemoveRcpt == 0 {
 		return ErrModificationNotAllowed
 	}
-	resp, err := newResponseStr(wire.Code(wire.ActDelRcpt), addHats(r))
+	resp, err := newResponseStr(wire.Code(wire.ActDelRcpt), AddAngle(r))
 	if err != nil {
 		return err
 	}
@@ -393,13 +397,21 @@ func (m *Modifier) InsertHeader(index int, name, value string) error {
 	return m.writePacket(newResponse(wire.Code(wire.ActInsertHeader), buffer.Bytes()).Response())
 }
 
-// ChangeFrom replaces the FROM envelope header with a new one
+// ChangeFrom replaces the FROM envelope header with value.
+// You can also define ESMTP arguments. But beware of the following Sendmail comment:
+//
+//	Even though all ESMTP arguments could be set via this call,
+//	it does not make sense to do so for many of them,
+//	e.g., SIZE and BODY.
+//	Setting those may cause problems, proper care must be taken.
+//	Moreover, there is no feedback from the MTA to the milter
+//	whether the call was successful.
 func (m *Modifier) ChangeFrom(value string, esmtpArgs string) error {
 	if m.actions&OptChangeFrom == 0 {
 		return ErrModificationNotAllowed
 	}
 	var buffer bytes.Buffer
-	buffer.WriteString(addHats(value))
+	buffer.WriteString(AddAngle(value))
 	buffer.WriteByte(0)
 	if esmtpArgs != "" {
 		buffer.WriteString(esmtpArgs)

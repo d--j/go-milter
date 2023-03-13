@@ -207,7 +207,7 @@ func (m *serverSession) Process(msg *wire.Message) (*Response, error) {
 		from := wire.ReadCString(msg.Data)
 		msg.Data = msg.Data[len(from)+1:]
 		esmtpArgs := wire.ReadCString(msg.Data)
-		return m.backend.MailFrom(removeHats(from), esmtpArgs, newModifier(m, true))
+		return m.backend.MailFrom(RemoveAngle(from), esmtpArgs, newModifier(m, true))
 
 	case wire.CodeRcpt:
 		if len(msg.Data) == 0 {
@@ -217,7 +217,7 @@ func (m *serverSession) Process(msg *wire.Message) (*Response, error) {
 		to := wire.ReadCString(msg.Data)
 		msg.Data = msg.Data[len(to)+1:]
 		esmtpArgs := wire.ReadCString(msg.Data)
-		return m.backend.RcptTo(removeHats(to), esmtpArgs, newModifier(m, true))
+		return m.backend.RcptTo(RemoveAngle(to), esmtpArgs, newModifier(m, true))
 
 	case wire.CodeData:
 		m.macros.DelStageAndAbove(StageEOH)
