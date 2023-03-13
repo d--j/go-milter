@@ -450,8 +450,8 @@ func Test_milterSession_Process(t *testing.T) {
 			backend: &processTestMilter{},
 			check: func(t *testing.T, s *serverSession) {
 				expect := map[MacroName]string{
-					MacroMTAFullyQualifiedDomainName: "1",
-					MacroQueueId:                     "2",
+					MacroMTAFQDN: "1",
+					MacroQueueId: "2",
 				}
 				if !reflect.DeepEqual(expect, s.macros.byStages[StageConnect]) {
 					t.Errorf("expect %+v, got %+v", expect, s.macros.byStages[StageConnect])
@@ -462,8 +462,8 @@ func Test_milterSession_Process(t *testing.T) {
 			backend: &processTestMilter{},
 			check: func(t *testing.T, s *serverSession) {
 				expect := map[MacroName]string{
-					MacroMTAFullyQualifiedDomainName: "1",
-					MacroQueueId:                     "",
+					MacroMTAFQDN: "1",
+					MacroQueueId: "",
 				}
 				if !reflect.DeepEqual(expect, s.macros.byStages[StageConnect]) {
 					t.Errorf("expect %+v, got %+v", expect, s.macros.byStages[StageConnect])

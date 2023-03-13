@@ -73,7 +73,7 @@ func TestServer_NoOpMilter(t *testing.T) {
 		return NoOpMilter{}
 	})}, nil)
 	defer w.Cleanup()
-	macros.Set(MacroMTAFullyQualifiedDomainName, "localhost.local")
+	macros.Set(MacroMTAFQDN, "localhost.local")
 	macros.Set(MacroTlsVersion, "TLS1.3")
 	macros.Set(MacroAuthType, "plain")
 	macros.Set(MacroRcptMailer, "smtp")

@@ -53,7 +53,7 @@ type Client struct {
 // If WithOfferedMaxData is not used, DataSize64K will be used.
 // If WithoutDefaultMacros or WithMacroRequest are not used the following default macro stages are used:
 //
-//	WithMacroRequest(StageConnect, []MacroName{MacroMTAFullyQualifiedDomainName, MacroDaemonName, MacroIfName, MacroIfAddr})
+//	WithMacroRequest(StageConnect, []MacroName{MacroMTAFQDN, MacroDaemonName, MacroIfName, MacroIfAddr})
 //	WithMacroRequest(StageHelo, []MacroName{MacroTlsVersion, MacroCipher, MacroCipherBits, MacroCertSubject, MacroCertIssuer})
 //	WithMacroRequest(StageMail, []MacroName{MacroAuthType, MacroAuthAuthen, MacroAuthSsf, MacroAuthAuthor, MacroMailMailer, MacroMailHost, MacroMailAddr})
 //	WithMacroRequest(StageRcpt, []MacroName{MacroRcptMailer, MacroRcptHost, MacroRcptAddr})
@@ -73,7 +73,7 @@ func NewClient(network, address string, opts ...Option) *Client {
 		offeredMaxData: DataSize64K,
 		usedMaxData:    DataSize64K,
 		macrosByStage: [][]MacroName{
-			{MacroMTAFullyQualifiedDomainName, MacroDaemonName, MacroIfName, MacroIfAddr},                                  // StageConnect
+			{MacroMTAFQDN, MacroDaemonName, MacroIfName, MacroIfAddr},                                                      // StageConnect
 			{MacroTlsVersion, MacroCipher, MacroCipherBits, MacroCertSubject, MacroCertIssuer},                             // StageHelo
 			{MacroAuthType, MacroAuthAuthen, MacroAuthSsf, MacroAuthAuthor, MacroMailMailer, MacroMailHost, MacroMailAddr}, // StageMail
 			{MacroRcptMailer, MacroRcptHost, MacroRcptAddr},                                                                // StageRcpt
@@ -153,7 +153,7 @@ func (c *Client) String() string {
 //
 // The macros parameter defines the Macros this ClientSession will use to send to the milter.
 // It can be nil then this session will not send any macros to the milter.
-// Set macro values as soon as you know them (e.g. the MacroMTAFullyQualifiedDomainName macro can be set before calling Session).
+// Set macro values as soon as you know them (e.g. the MacroMTAFQDN macro can be set before calling Session).
 // It is your responsibility to clear command specific macros like MacroRcptMailer after
 // the command got executed (on all milters in a list of milters).
 //

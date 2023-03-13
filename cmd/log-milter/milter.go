@@ -92,7 +92,8 @@ func (l *LogMilter) outputChangedMacros(m *milter.Modifier) {
 		l.macroValues = make(map[milter.MacroName]string)
 	}
 	for _, name := range []milter.MacroName{
-		milter.MacroMTAFullyQualifiedDomainName,
+		milter.MacroMTAVersion,
+		milter.MacroMTAFQDN,
 		milter.MacroDaemonName,
 		milter.MacroIfName,
 		milter.MacroIfAddr,

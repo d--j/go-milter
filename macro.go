@@ -26,37 +26,27 @@ type MacroName = string
 
 // Macros that have good support between MTAs like sendmail and Postfix
 const (
-	MacroMTAFullyQualifiedDomainName MacroName = "j"
-	MacroDaemonName                  MacroName = "{daemon_name}"
-	MacroIfName                      MacroName = "{if_name}"
-	MacroIfAddr                      MacroName = "{if_addr}"
-	MacroTlsVersion                  MacroName = "{tls_version}"
-	MacroCipher                      MacroName = "{cipher}"
-	MacroCipherBits                  MacroName = "{cipher_bits}"
-	MacroCertSubject                 MacroName = "{cert_subject}"
-	MacroCertIssuer                  MacroName = "{cert_issuer}"
-	// The queue ID for this message. Some MTAs only assign a Queue ID after the DATA command (Postfix)
-	MacroQueueId MacroName = "i"
-	// The used authentication method (LOGIN, DIGEST-MD5, etc)
-	MacroAuthType MacroName = "{auth_type}"
-	// The username of the authenticated user
-	MacroAuthAuthen MacroName = "{auth_authen}"
-	// The key length (in bits) of the used encryption layer (TLS) – if any
-	MacroAuthSsf MacroName = "{auth_ssf}"
-	// The optional overwrite username for this message
-	MacroAuthAuthor MacroName = "{auth_author}"
-	// the delivery agent for this MAIL FROM (e.g. esmtp, lmtp)
-	MacroMailMailer MacroName = "{mail_mailer}"
-	// the domain part of the MAIL FROM address
-	MacroMailHost MacroName = "{mail_host}"
-	// the MAIL FROM address (only the address without <>)
-	MacroMailAddr MacroName = "{mail_addr}"
-	// MacroRcptMailer holds the delivery agent for the current RCPT TO address
-	MacroRcptMailer MacroName = "{rcpt_mailer}"
-	// The domain part of the RCPT TO address
-	MacroRcptHost MacroName = "{rcpt_host}"
-	// the RCPT TO address (only the address without <>)
-	MacroRcptAddr MacroName = "{rcpt_addr}"
+	MacroMTAVersion  MacroName = "v"              // MTA Version (and MTA name in case of Postfix)
+	MacroMTAFQDN     MacroName = "j"              // MTA fully qualified domain name
+	MacroDaemonName  MacroName = "{daemon_name}"  // name of the daemon of the MTA. E.g. MTA-v4 or smtpd or anything the user configured.
+	MacroIfName      MacroName = "{if_name}"      // Interface name of the interface the MTA is accepting the SMTP connection
+	MacroIfAddr      MacroName = "{if_addr}"      // IP address of the interface the MTA is accepting the SMTP connection
+	MacroTlsVersion  MacroName = "{tls_version}"  // TLS version in use (set after STARTTLS or when SMTPS is used)
+	MacroCipher      MacroName = "{cipher}"       // Cipher suite used (set after STARTTLS or when SMTPS is used)
+	MacroCipherBits  MacroName = "{cipher_bits}"  // Strength of the cipher suite in bits (set after STARTTLS or when SMTPS is used)
+	MacroCertSubject MacroName = "{cert_subject}" // Validated client cert's subject information (only when mutual TLS is in use)
+	MacroCertIssuer  MacroName = "{cert_issuer}"  // Validated client cert's issuer information (only when mutual TLS is in use)
+	MacroQueueId     MacroName = "i"              // The queue ID for this message. Some MTAs only assign a Queue ID after the DATA command (Postfix)
+	MacroAuthType    MacroName = "{auth_type}"    // The used authentication method (LOGIN, DIGEST-MD5, etc)
+	MacroAuthAuthen  MacroName = "{auth_authen}"  // The username of the authenticated user
+	MacroAuthSsf     MacroName = "{auth_ssf}"     // The key length (in bits) of the used encryption layer (TLS) – if any
+	MacroAuthAuthor  MacroName = "{auth_author}"  // The optional overwrite username for this message
+	MacroMailMailer  MacroName = "{mail_mailer}"  // the delivery agent for this MAIL FROM (e.g. esmtp, lmtp)
+	MacroMailHost    MacroName = "{mail_host}"    // the domain part of the MAIL FROM address
+	MacroMailAddr    MacroName = "{mail_addr}"    // the MAIL FROM address (only the address without <>)
+	MacroRcptMailer  MacroName = "{rcpt_mailer}"  // MacroRcptMailer holds the delivery agent for the current RCPT TO address
+	MacroRcptHost    MacroName = "{rcpt_host}"    // The domain part of the RCPT TO address
+	MacroRcptAddr    MacroName = "{rcpt_addr}"    // the RCPT TO address (only the address without <>)
 )
 
 // Macros that do not have good cross-MTA support. Only usable with sendmail as MTA.

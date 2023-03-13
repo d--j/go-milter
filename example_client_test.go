@@ -12,7 +12,7 @@ func ExampleClient() {
 	// create milter definition once
 	client := milter.NewClient("tcp", "127.0.0.1:1234")
 	globalMacros := milter.NewMacroBag()
-	globalMacros.Set(milter.MacroMTAFullyQualifiedDomainName, "localhost.local")
+	globalMacros.Set(milter.MacroMTAFQDN, "localhost.local")
 	globalMacros.Set(milter.MacroMTAPid, "123")
 
 	// on each SMTP connection
