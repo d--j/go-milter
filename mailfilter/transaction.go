@@ -4,9 +4,23 @@ import (
 	"context"
 	"io"
 	"os"
+	"regexp"
 
 	"github.com/d--j/go-milter"
 )
+
+type MTA struct {
+	Version string // value of [milter.MacroMTAVersion] macro
+	FQDN    string // value of [milter.MacroMTAFQDN] macro
+	Daemon  string // value of [milter.MacroDaemonName] macro
+}
+
+var sendmailVersionRe = regexp.MustCompile("^8\\.\\d+\\.\\d+\\b")
+
+// IsSendmail returns true when [MTA.Version] looks like a Sendmail version number
+func (m *MTA) IsSendmail() bool {
+	return sendmailVersionRe.MatchString(m.Version)
+}
 
 type Connect struct {
 	Host   string // The host name the MTA figured out for the remote client.
@@ -29,6 +43,9 @@ type Helo struct {
 // Transaction can be used to examine the data of the current mail transaction and
 // also send changes to the message back to the MTA.
 type Transaction struct {
+	// MTA hols information about the connecting MTA
+	MTA MTA
+
 	// Connect holds the [Connect] information of this transaction.
 	Connect Connect
 

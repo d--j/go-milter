@@ -77,8 +77,8 @@ func New(network, address string, decision DecisionModificationFunc, opts ...Opt
 	if resolvedOptions.skipBody {
 		protocols = protocols | milter.OptNoBody
 	}
-	macroStages := make([][]milter.MacroName, 0, 5)
-	macroStages = append(macroStages, []milter.MacroName{milter.MacroIfName, milter.MacroIfAddr}) // StageConnect
+	macroStages := make([][]milter.MacroName, 0, 6)
+	macroStages = append(macroStages, []milter.MacroName{milter.MacroIfName, milter.MacroIfAddr, milter.MacroMTAVersion, milter.MacroMTAFQDN, milter.MacroDaemonName}) // StageConnect
 	if resolvedOptions.decisionAt > DecisionAtConnect {
 		// StageHelo
 		macroStages = append(macroStages, []milter.MacroName{milter.MacroTlsVersion, milter.MacroCipher, milter.MacroCipherBits, milter.MacroCertSubject, milter.MacroCertIssuer})
@@ -92,6 +92,7 @@ func New(network, address string, decision DecisionModificationFunc, opts ...Opt
 		// but if it is not, try at the end of the message
 		macroStages = append(macroStages, []milter.MacroName{milter.MacroQueueId}) //StageData
 		macroStages = append(macroStages, []milter.MacroName{milter.MacroQueueId}) //StageEOM
+		macroStages = append(macroStages, []milter.MacroName{})                    //StageEOH
 	}
 
 	milterOptions := []milter.Option{

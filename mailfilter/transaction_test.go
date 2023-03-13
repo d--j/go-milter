@@ -291,3 +291,28 @@ func TestTransaction_sendModifications(t1 *testing.T) {
 		})
 	}
 }
+
+func TestMTA_IsSendmail(t *testing.T) {
+	type fields struct {
+		Version string
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   bool
+	}{
+		{"vanilla", fields{"8.15.2"}, true},
+		{"suffixed", fields{"8.15.2-ubuntu12"}, true},
+		{"Postfix default", fields{"Postfix 8.15.2"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &MTA{
+				Version: tt.fields.Version,
+			}
+			if got := m.IsSendmail(); got != tt.want {
+				t.Errorf("IsSendmail() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

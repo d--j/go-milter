@@ -82,6 +82,11 @@ func (b *backend) makeDecision(m *milter.Modifier) {
 
 func (b *backend) Connect(host string, family string, port uint16, addr string, m *milter.Modifier) (*milter.Response, error) {
 	b.Cleanup()
+	b.transaction.MTA = MTA{
+		Version: m.Macros.Get(milter.MacroMTAVersion),
+		FQDN:    m.Macros.Get(milter.MacroMTAFQDN),
+		Daemon:  m.Macros.Get(milter.MacroDaemonName),
+	}
 	b.transaction.Connect = Connect{
 		Host:   host,
 		Family: family,
