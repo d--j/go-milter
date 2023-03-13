@@ -137,7 +137,6 @@ setup_chroot() {
 }
 
 if [ "start" = "$1" ]; then
-  shift
   parse_args "$@"
   mkdir "$SCRATCH_DIR/conf" "$SCRATCH_DIR/conf/sasl" "$SCRATCH_DIR/data" "$SCRATCH_DIR/queue" || die "could not create $SCRATCH_DIR/{conf,data,queue}"
   render_template <"$SCRIPT_DIR/main.cf" >"$SCRATCH_DIR/conf/main.cf" || die "could not create $SCRATCH_DIR/conf/main.cf"
@@ -156,7 +155,6 @@ if [ "start" = "$1" ]; then
 fi
 
 if [ "stop" = "$1" ]; then
-  shift
   parse_args "$@"
   sudo -n -- postfix -v -c "$SCRATCH_DIR/conf" stop
   exit 0

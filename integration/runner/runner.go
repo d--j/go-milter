@@ -1,8 +1,6 @@
 package main
 
 import (
-	"os"
-
 	"github.com/d--j/go-milter/integration"
 )
 
@@ -18,7 +16,7 @@ func NewRunner(config *Config, receiver *Receiver) *Runner {
 	}
 }
 
-func (r *Runner) Run() {
+func (r *Runner) Run() bool {
 	var prevMta *MTA
 	var prevDir *TestDir
 	defer func() {
@@ -39,7 +37,8 @@ func (r *Runner) Run() {
 			LevelOneLogger.Print(dir.MTA)
 			prevMta = dir.MTA
 			if err := dir.MTA.Start(); err != nil {
-				LevelTwoLogger.Fatal(err)
+				LevelTwoLogger.Printf("ERR starting MTA %v", err)
+				return false
 			}
 		}
 		prevDir = dir
@@ -53,7 +52,8 @@ func (r *Runner) Run() {
 				}
 				continue
 			}
-			LevelTwoLogger.Fatal(err)
+			LevelTwoLogger.Printf("ERR starting milter %v", err)
+			return false
 		}
 		for _, t := range dir.Tests {
 			i++
@@ -63,13 +63,12 @@ func (r *Runner) Run() {
 			}
 			code, message, step, err := t.Send(t.TestCase.InputSteps, dir.MTA.Port)
 			if err != nil {
-				prevMta.MarkFailedTest()
-				prevMta.Stop()
-				LevelThreeLogger.Fatal(err)
+				t.MarkFailed("ERR %v", err)
+				return false
 			}
 			if !t.TestCase.Decision.Compare(code, message, step) {
 				r.receiver.IgnoreMessages()
-				t.MarkFailed("%03d/%03d NOK DECISION %s != %d %s @%s", i, tests, t.TestCase.Decision, code, message, step)
+				t.MarkFailed("NOK DECISION %s != %d %s @%s", t.TestCase.Decision, code, message, step)
 				continue
 			}
 			if t.TestCase.ExpectsOutput() {
@@ -79,15 +78,15 @@ func (r *Runner) Run() {
 				if !ok {
 					if t.parent.MTA.HasTag("mta-sendmail") {
 						if integration.CompareOutputSendmail(t.TestCase.Output, output) {
-							t.MarkOk("%03d/%03d OK (sendmail) %s", i, tests, diff)
+							t.MarkOk("OK (sendmail) %s", diff)
 							continue
 						}
 					}
-					t.MarkFailed("%03d/%03d NOK OUTPUT %s", i, tests, diff)
+					t.MarkFailed("NOK OUTPUT %sRECEIVED OUTPUT\n%s", diff, output)
 					continue
 				}
 			}
-			t.MarkOk("%03d/%03d OK", i, tests)
+			t.MarkOk("OK")
 		}
 		prevDir.Stop()
 	}
@@ -103,7 +102,5 @@ func (r *Runner) Run() {
 		}
 	}
 	LevelOneLogger.Printf("%d tests done: %d OK %d skipped %d failed", len(r.config.Tests), numOk, numSkipped, numFailed)
-	if numFailed > 0 {
-		os.Exit(1)
-	}
+	return numFailed == 0
 }

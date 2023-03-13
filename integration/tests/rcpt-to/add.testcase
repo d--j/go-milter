@@ -1,0 +1,4 @@
+TO <add@example.com>
+DECISION ACCEPT
+TO <add@example.com> *
+TO <another@example.com> *

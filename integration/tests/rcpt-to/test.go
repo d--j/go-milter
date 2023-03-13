@@ -1,5 +1,3 @@
-//go:build: auth-no
-
 package main
 
 import (
@@ -25,6 +23,14 @@ func main() {
 		}
 		if trx.HasRcptTo("quarantine@example.com") {
 			return mailfilter.QuarantineResponse("test"), nil
+		}
+		if trx.HasRcptTo("add@example.com") {
+			trx.AddRcptTo("another@example.com", "")
+		}
+		if trx.HasRcptTo("change@example.com") {
+			trx.DelRcptTo("change@example.com")
+			// Sendmail does not like setting ESMTP args, so we do not set any
+			trx.AddRcptTo("another@example.com", "")
 		}
 		return mailfilter.Accept, nil
 		// the decision is done at the DATA command but the mock server sends the DATA response before we can intercept

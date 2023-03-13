@@ -1,5 +1,3 @@
-//go:build: auth-no
-
 package main
 
 import (

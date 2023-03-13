@@ -18,5 +18,9 @@ func main() {
 	}
 	defer receiver.Cleanup()
 	runner := NewRunner(config, &receiver)
-	runner.Run()
+	if !runner.Run() {
+		receiver.Cleanup()
+		config.Cleanup()
+		os.Exit(1)
+	}
 }

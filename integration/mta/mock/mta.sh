@@ -16,14 +16,12 @@ if [ "tags" = "$1" ]; then
 fi
 
 if [ "start" = "$1" ]; then
-  shift
   parse_args "$@"
   go build -o "$SCRATCH_DIR/mta.exe" -v "$SCRIPT_DIR"
   exec "$SCRATCH_DIR/mta.exe" -mta ":$MTA_PORT" -next ":$RECEIVER_PORT" -milter ":$MILTER_PORT" -cert "$SCRATCH_DIR/../cert.pem" -key "$SCRATCH_DIR/../key.pem"
 fi
 
 if [ "stop" = "$1" ]; then
-  shift
   parse_args "$@"
   exit 0
 fi

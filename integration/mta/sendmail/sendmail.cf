@@ -101,7 +101,7 @@ Fw/etc/mail/local-host-names %[^\#]
 
 # my official domain name
 # ... define this only if sendmail cannot automatically determine your domain
-#Dj$w.Foo.COM
+Djmx.example.com
 
 # host/domain names ending with a token in class P are canonical
 CP.
@@ -253,7 +253,7 @@ O UseErrorsTo=False
 #O UseCompressedIPv6Addresses
 
 # log level
-O LogLevel=9
+O LogLevel=50
 
 # send to me too, even in an alias expansion?
 O MeToo=True
@@ -299,8 +299,8 @@ O MaxRunnersPerQueue=5
 # shall we sort the queue by hostname first?
 #O QueueSortOrder=priority
 
-# increase milter log level (breaks sendmail?)
-#O Milter.LogLevel=99
+# increase milter log level
+O Milter.LogLevel=50
 
 # minimum time in queue before retry
 #O MinQueueAge=30m
@@ -570,19 +570,19 @@ O ProcessTitlePrefix=MTA
 
 
 # CA directory
-#O CACertPath
+O CACertPath=/etc/ssl/certs/
 # CA file
-#O CACertFile
+O CACertFile=%{SCRATCH_DIR}/cert.pem
 # Server Cert
-#O ServerCertFile
+O ServerCertFile=%{SCRATCH_DIR}/cert.pem
 # Server private key
-#O ServerKeyFile
+O ServerKeyFile=%{SCRATCH_DIR}/key.pem
 # Client Cert
 #O ClientCertFile
 # Client private key
 #O ClientKeyFile
 # File containing certificate revocation lists
-#O CRLFile
+O CRLFile=/dev/null
 # DHParameters (only required if DSA/DH is used)
 #O DHParameters
 # Random data source (required for systems without /dev/urandom under OpenSSL)

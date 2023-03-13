@@ -131,22 +131,22 @@ func (o *Output) String() string {
 	var b strings.Builder
 	if o.From != nil {
 		b.WriteString("FROM\n")
-		b.WriteString(fmt.Sprintf("- <%s> %s\n", o.From.Addr, o.From.Arg))
+		b.WriteString(fmt.Sprintf("<%s> %s\n", o.From.Addr, o.From.Arg))
 	}
 	if o.To != nil {
 		b.WriteString("TO\n")
 		for _, t := range o.To {
-			b.WriteString(fmt.Sprintf("- <%s> %s\n", t.Addr, t.Arg))
+			b.WriteString(fmt.Sprintf("<%s> %s\n", t.Addr, t.Arg))
 		}
 	}
 	if o.Header != nil {
 		b.WriteString("HEADER\n")
-		b.WriteString(fmt.Sprintf("- %q\n", o.Header))
+		b.WriteString(fmt.Sprintf("%q\n", o.Header))
 
 	}
 	if o.Body != nil {
 		b.WriteString("BODY\n")
-		b.WriteString(fmt.Sprintf("- %q\n", o.Body))
+		b.WriteString(fmt.Sprintf("%q\n", o.Body))
 	}
 	return b.String()
 }

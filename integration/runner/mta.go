@@ -65,8 +65,12 @@ func (m *MTA) MarkFailedTest() {
 }
 
 func (m *MTA) Start() error {
+	err := os.Chmod(m.path, 0755)
+	if err != nil {
+		return err
+	}
 	m.dir = path.Join(m.config.ScratchDir, fmt.Sprintf("mta-%d", m.Port))
-	err := os.Mkdir(m.dir, 0755)
+	err = os.Mkdir(m.dir, 0755)
 	if err != nil && !os.IsExist(err) {
 		return err
 	}
@@ -92,13 +96,13 @@ func (m *MTA) Start() error {
 		b, err := m.cmd.CombinedOutput()
 		failed := !IsExpectedExitErr(err)
 		if failed {
-			LevelTwoLogger.Print(err)
+			LevelOneLogger.Print(err)
 		}
 		m.m.Lock()
 		failedTest := m.failedTest
 		m.m.Unlock()
-		if failed || failedTest {
-			LevelTwoLogger.Printf("MTA %s\n%s", m.path, b)
+		if failed || failedTest && len(b) > 0 {
+			LevelOneLogger.Printf("MTA %s output\n%s", m.path, b)
 		}
 		m.wg.Done()
 		cancel()
@@ -109,7 +113,7 @@ func (m *MTA) Start() error {
 		m.Stop()
 		return err
 	}
-	LevelTwoLogger.Printf("MTA %s ready", m.path)
+	LevelOneLogger.Printf("MTA %s ready", m.path)
 	return nil
 }
 
@@ -131,8 +135,8 @@ func (m *MTA) Stop() {
 		m.m.Lock()
 		failedTest := m.failedTest
 		m.m.Unlock()
-		if failedTest {
-			LevelTwoLogger.Printf("MTA %s stop\n%s", m.path, b)
+		if failedTest && len(b) > 0 {
+			LevelOneLogger.Printf("MTA %s stop output\n%s", m.path, b)
 		}
 	})
 }

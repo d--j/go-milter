@@ -46,8 +46,9 @@ type Backend struct {
 
 func (bkd *Backend) NewSession(conn *smtp.Conn) (smtp.Session, error) {
 	macros := milter.NewMacroBag()
-	macros.Set(milter.MacroMTAFullyQualifiedDomainName, "localhost.local")
-	macros.Set(milter.MacroDaemonName, "localhost.local")
+	macros.Set(milter.MacroMTAVersion, "MOCK-SMTP 0.0.0")
+	macros.Set(milter.MacroMTAFQDN, "localhost.local")
+	macros.Set(milter.MacroDaemonName, "mock-smtp")
 	macros.Set(milter.MacroIfName, "eth99")
 	addr, _, err := net.SplitHostPort(conn.Conn().LocalAddr().String())
 	if err != nil {
@@ -289,21 +290,22 @@ func (s *Session) Data(r io.Reader) error {
 	for _, act := range modActions {
 		switch act.Type {
 		case milter.ActionChangeFrom:
-			log.Printf("[%s] ACT = ActionChangeFrom <%s> %s", s.queueId, act.From, act.FromArgs)
-			s.MailFrom = act.From
+			log.Printf("[%s] ACT = ActionChangeFrom %s %s", s.queueId, act.From, act.FromArgs)
+			s.MailFrom = milter.RemoveAngle(act.From)
 			s.MailFromArgs = act.FromArgs
 		case milter.ActionDelRcpt:
-			log.Printf("[%s] ACT = ActionDelRcpt <%s>", s.queueId, act.Rcpt)
+			log.Printf("[%s] ACT = ActionDelRcpt %s", s.queueId, act.Rcpt)
+			rcpt := milter.RemoveAngle(act.Rcpt)
 		again:
 			for i, r := range s.Recipients {
-				if act.Rcpt == r.Addr {
+				if rcpt == r.Addr {
 					s.Recipients = append(s.Recipients[:i], s.Recipients[i+1:]...)
 					goto again
 				}
 			}
 		case milter.ActionAddRcpt:
-			log.Printf("[%s] ACT = ActionAddRcpt <%s> %s", s.queueId, act.Rcpt, act.RcptArgs)
-			s.Recipients = append(s.Recipients, Rcpt{Addr: act.Rcpt, Args: act.RcptArgs})
+			log.Printf("[%s] ACT = ActionAddRcpt %s %s", s.queueId, act.Rcpt, act.RcptArgs)
+			s.Recipients = append(s.Recipients, Rcpt{Addr: milter.RemoveAngle(act.Rcpt), Args: act.RcptArgs})
 		case milter.ActionReplaceBody:
 			log.Printf("[%s] ACT = ActionReplaceBody %q", s.queueId, act.Body)
 			replacedBody = append(replacedBody, act.Body...)

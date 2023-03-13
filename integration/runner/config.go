@@ -49,6 +49,8 @@ func ParseConfig() *Config {
 	flag.UintVar(&milterPort, "milterPort", 34126, "`port` for test milter servers (1024 < port < 65536")
 	filter := ""
 	flag.StringVar(&filter, "filter", "", "regexp `pattern` to filter testcases")
+	mtaFilter := ""
+	flag.StringVar(&mtaFilter, "mtaFilter", "", "regexp `pattern` to filter MTAs")
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(), "Usage of %s:\n", os.Args[0])
 		flag.PrintDefaults()
@@ -59,6 +61,13 @@ func ParseConfig() *Config {
 		filter = ".*"
 	}
 	filterRe, err := regexp.Compile(filter)
+	if err != nil {
+		LevelOneLogger.Fatal(err)
+	}
+	if mtaFilter == "" {
+		mtaFilter = ".*"
+	}
+	mtaFilterRe, err := regexp.Compile(mtaFilter)
 	if err != nil {
 		LevelOneLogger.Fatal(err)
 	}
@@ -97,13 +106,19 @@ func ParseConfig() *Config {
 	if mtas == nil {
 		LevelOneLogger.Fatalf("did not find any MTAs")
 	}
-	if mtaPort+uint(len(mtas)) > math.MaxUint16 {
+	var filteredMtas []string
+	for _, m := range mtas {
+		if mtaFilterRe.MatchString(m) {
+			filteredMtas = append(filteredMtas, m)
+		}
+	}
+	if mtaPort+uint(len(filteredMtas)) > math.MaxUint16 {
 		LevelOneLogger.Fatal("too many MTAs, pick a lower -mtaPort")
 	}
-	if overlap(receiverPort, receiverPort, mtaPort, mtaPort+uint(len(mtas))) {
+	if overlap(receiverPort, receiverPort, mtaPort, mtaPort+uint(len(filteredMtas))) {
 		LevelOneLogger.Fatal("-receiverPort and -mtaPort overlap")
 	}
-	if overlap(milterPort, milterPort, mtaPort, mtaPort+uint(len(mtas))) {
+	if overlap(milterPort, milterPort, mtaPort, mtaPort+uint(len(filteredMtas))) {
 		LevelOneLogger.Fatal("-milterPort and -mtaPort overlap")
 	}
 	if overlap(receiverPort, receiverPort, milterPort, milterPort) {
@@ -111,7 +126,7 @@ func ParseConfig() *Config {
 	}
 	var dirs []*TestDir
 	var tests []*TestCase
-	for _, p := range mtas {
+	for _, p := range filteredMtas {
 		mta, err := NewMTA(p, uint16(mtaPort), &config)
 		mtaPort++
 		if err != nil {

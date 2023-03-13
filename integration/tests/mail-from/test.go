@@ -1,5 +1,3 @@
-//go:build: auth-no
-
 package main
 
 import (
@@ -25,6 +23,13 @@ func main() {
 		}
 		if trx.MailFrom.Addr == "quarantine@example.com" {
 			return mailfilter.QuarantineResponse("test"), nil
+		}
+		if trx.MailFrom.Addr == "change@example.com" {
+			trx.MailFrom.Addr = "another@example.com"
+			// Sendmail might break when you do not null this out
+			if trx.MTA.IsSendmail() {
+				trx.MailFrom.Args = ""
+			}
 		}
 		return mailfilter.Accept, nil
 	}, mailfilter.WithDecisionAt(mailfilter.DecisionAtMailFrom))

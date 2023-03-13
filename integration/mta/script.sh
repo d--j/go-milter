@@ -12,6 +12,7 @@ usage() {
 }
 
 parse_args() {
+  shift
   while [ $# -gt 0 ]; do
     case $1 in
     -mtaPort)
