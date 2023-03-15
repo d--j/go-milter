@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/d--j/go-milter"
+	"github.com/d--j/go-milter/mailfilter/addr"
 )
 
 type backend struct {
@@ -14,7 +15,7 @@ type backend struct {
 	opts         options
 	leadingSpace bool
 	decision     DecisionModificationFunc
-	transaction  *Transaction
+	transaction  *transaction
 }
 
 func (b *backend) decideOrContinue(stage DecisionAt, m *milter.Modifier) (*milter.Response, error) {
@@ -61,6 +62,7 @@ func (b *backend) makeDecision(m *milter.Modifier) {
 	for {
 		select {
 		case <-done:
+			cancel()
 			return
 		case <-ticker.C:
 			err := m.Progress()
@@ -82,12 +84,12 @@ func (b *backend) makeDecision(m *milter.Modifier) {
 
 func (b *backend) Connect(host string, family string, port uint16, addr string, m *milter.Modifier) (*milter.Response, error) {
 	b.Cleanup()
-	b.transaction.MTA = MTA{
+	b.transaction.mta = MTA{
 		Version: m.Macros.Get(milter.MacroMTAVersion),
 		FQDN:    m.Macros.Get(milter.MacroMTAFQDN),
 		Daemon:  m.Macros.Get(milter.MacroDaemonName),
 	}
-	b.transaction.Connect = Connect{
+	b.transaction.connect = Connect{
 		Host:   host,
 		Family: family,
 		Port:   port,
@@ -102,7 +104,7 @@ func (b *backend) Helo(name string, m *milter.Modifier) (*milter.Response, error
 	if b.transaction.hasDecision {
 		return milter.RespContinue, nil
 	}
-	b.transaction.Helo = Helo{
+	b.transaction.helo = Helo{
 		Name:        name,
 		TlsVersion:  m.Macros.Get(milter.MacroTlsVersion),
 		Cipher:      m.Macros.Get(milter.MacroCipher),
@@ -117,12 +119,7 @@ func (b *backend) MailFrom(from string, esmtpArgs string, m *milter.Modifier) (*
 	if b.transaction.hasDecision {
 		return milter.RespContinue, nil
 	}
-	b.transaction.mailFrom = MailFrom{
-		addr:                 addr{Addr: from, Args: esmtpArgs},
-		transport:            m.Macros.Get(milter.MacroMailMailer),
-		authenticatedUser:    m.Macros.Get(milter.MacroAuthAuthen),
-		authenticationMethod: m.Macros.Get(milter.MacroAuthType),
-	}
+	b.transaction.origMailFrom = addr.NewMailFrom(from, esmtpArgs, m.Macros.Get(milter.MacroMailMailer), m.Macros.Get(milter.MacroAuthAuthen), m.Macros.Get(milter.MacroAuthType))
 	return b.decideOrContinue(DecisionAtMailFrom, m)
 }
 
@@ -130,10 +127,7 @@ func (b *backend) RcptTo(rcptTo string, esmtpArgs string, m *milter.Modifier) (*
 	if b.transaction.hasDecision {
 		return milter.RespSkip, nil
 	}
-	b.transaction.rcptTos = append(b.transaction.rcptTos, RcptTo{
-		addr:      addr{Addr: rcptTo, Args: esmtpArgs},
-		transport: m.Macros.Get(milter.MacroRcptMailer),
-	})
+	b.transaction.origRcptTos = append(b.transaction.origRcptTos, addr.NewRcptTo(rcptTo, esmtpArgs, m.Macros.Get(milter.MacroRcptMailer)))
 	return milter.RespContinue, nil
 }
 
@@ -141,7 +135,7 @@ func (b *backend) Data(m *milter.Modifier) (*milter.Response, error) {
 	if b.transaction.hasDecision {
 		return milter.RespContinue, nil
 	}
-	b.transaction.QueueId = m.Macros.Get(milter.MacroQueueId)
+	b.transaction.queueId = m.Macros.Get(milter.MacroQueueId)
 	return b.decideOrContinue(DecisionAtData, m)
 }
 
@@ -164,7 +158,7 @@ func (b *backend) Header(name string, value string, _ *milter.Modifier) (*milter
 	if name == "" || value == "" {
 		milter.LogWarning("milter: skip header %q because we got an empty value or name", name)
 	} else {
-		b.transaction.addHeader(name, fmt.Sprintf("%s:%s", name, value))
+		b.transaction.addHeader(name, []byte(fmt.Sprintf("%s:%s", name, value)))
 	}
 	return milter.RespContinue, nil
 }
@@ -189,17 +183,17 @@ func (b *backend) BodyChunk(chunk []byte, _ *milter.Modifier) (*milter.Response,
 
 func (b *backend) readyForNewMessage() {
 	if b.transaction != nil {
-		connect, helo := b.transaction.Connect, b.transaction.Helo
+		connect, helo := b.transaction.connect, b.transaction.helo
 		b.Cleanup()
-		b.transaction.Connect, b.transaction.Helo = connect, helo
+		b.transaction.connect, b.transaction.helo = connect, helo
 	} else {
 		b.Cleanup()
 	}
 }
 
 func (b *backend) EndOfMessage(m *milter.Modifier) (*milter.Response, error) {
-	if !b.transaction.hasDecision && b.transaction.QueueId == "" {
-		b.transaction.QueueId = m.Macros.Get(milter.MacroQueueId)
+	if !b.transaction.hasDecision && b.transaction.queueId == "" {
+		b.transaction.queueId = m.Macros.Get(milter.MacroQueueId)
 	}
 	if !b.transaction.hasDecision {
 		b.makeDecision(m)
@@ -229,7 +223,7 @@ func (b *backend) Cleanup() {
 	if b.transaction != nil {
 		b.transaction.cleanup()
 	}
-	b.transaction = &Transaction{}
+	b.transaction = &transaction{}
 }
 
-var _ milter.Milter = &backend{}
+var _ milter.Milter = (*backend)(nil)

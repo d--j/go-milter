@@ -130,8 +130,9 @@ func TestQuarantineResponse(t *testing.T) {
 			if got.getCode() != Accept.getCode() {
 				t.Errorf("QuarantineResponse().getCode() = %v, want %v", got.getCode(), Accept.getCode())
 			}
-			if got.getReason() != Accept.getReason() {
-				t.Errorf("QuarantineResponse().getReason() = %v, want %v", got.getReason(), Accept.getReason())
+			expectedReason := "accept (quarantined: \"reason\")"
+			if got.getReason() != expectedReason {
+				t.Errorf("QuarantineResponse().getReason() = %v, want %v", got.getReason(), expectedReason)
 			}
 		})
 	}

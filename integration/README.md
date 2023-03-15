@@ -104,7 +104,7 @@ import (
 
 func main() {
 	integration.RequiredTags("auth-plain", "auth-no", "tls-starttls", "tls-no")
-	integration.Test(func(ctx context.Context, trx *mailfilter.Transaction) (mailfilter.Decision, error) {
+	integration.Test(func(ctx context.Context, trx mailfilter.Trx) (mailfilter.Decision, error) {
 		return mailfilter.CustomErrorResponse(501, "Test"), nil
 	}, mailfilter.WithDecisionAt(mailfilter.DecisionAtMailFrom))
 }

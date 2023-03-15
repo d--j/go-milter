@@ -1,6 +1,9 @@
 package mailfilter
 
-import "strconv"
+import (
+	"fmt"
+	"strconv"
+)
 
 type Decision interface {
 	getCode() uint16
@@ -54,7 +57,7 @@ func (c quarantineResponse) getCode() uint16 {
 }
 
 func (c quarantineResponse) getReason() string {
-	return "accept"
+	return fmt.Sprintf("accept (quarantined: %q)", c.reason)
 }
 
 func QuarantineResponse(reason string) Decision {

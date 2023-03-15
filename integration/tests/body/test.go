@@ -10,8 +10,8 @@ import (
 )
 
 func main() {
-	integration.Test(func(ctx context.Context, trx *mailfilter.Transaction) (mailfilter.Decision, error) {
-		switch trx.MailFrom.Addr {
+	integration.Test(func(ctx context.Context, trx mailfilter.Trx) (mailfilter.Decision, error) {
+		switch trx.MailFrom().Addr {
 		case "add@example.com":
 			b, err := io.ReadAll(trx.Body())
 			if err != nil {

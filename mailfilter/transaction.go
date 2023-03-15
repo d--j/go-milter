@@ -1,12 +1,18 @@
 package mailfilter
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"regexp"
 
 	"github.com/d--j/go-milter"
+	"github.com/d--j/go-milter/internal/header"
+	"github.com/d--j/go-milter/internal/rcptto"
+	"github.com/d--j/go-milter/mailfilter/addr"
+	header2 "github.com/d--j/go-milter/mailfilter/header"
 )
 
 type MTA struct {
@@ -40,63 +46,58 @@ type Helo struct {
 	CertIssuer  string // If MutualTLS was used for the connection between client and MTA this holds the subject of the issuer of the client certificate (CA or Sub-CA).
 }
 
-// Transaction can be used to examine the data of the current mail transaction and
+// transaction can be used to examine the data of the current mail transaction and
 // also send changes to the message back to the MTA.
-type Transaction struct {
-	// MTA hols information about the connecting MTA
-	MTA MTA
-
-	// Connect holds the [Connect] information of this transaction.
-	Connect Connect
-
-	// Helo holds the [Helo] information of this transaction.
-	//
-	// Only populated if [WithDecisionAt] is bigger than [DecisionAtConnect].
-	Helo Helo
-
-	// MailFrom holds the [MailFrom] of this transaction.
-	// You can change this and your changes get send back to the MTA.
-	//
-	// Only populated if [WithDecisionAt] is bigger than [DecisionAtHelo].
-	MailFrom MailFrom
-
-	// RcptTos holds the [RcptTo] recipient slice of this transaction.
-	// You can change this and your changes get send back to the MTA.
-	//
-	// Only populated if [WithDecisionAt] is bigger than [DecisionAtMailFrom].
-	RcptTos []RcptTo
-
-	// QueueId is the queue ID the MTA assigned for this transaction.
-	// You cannot change this value.
-	//
-	// Only populated if [WithDecisionAt] is bigger than [DecisionAtMailFrom].
-	QueueId string
-
-	// Headers are the [Header] fields of this message.
-	// You can use methods of this to change the header fields of the current message.
-	//
-	// Do not replace this variable. Always use the modification methods of [Header] and [Header.Fields].
-	// The mail filter might panic if you do replace Headers.
-	//
-	// Only populated if [WithDecisionAt] is bigger than [DecisionAtData].
-	Headers *Header
-
+type transaction struct {
+	mta              MTA
+	connect          Connect
+	helo             Helo
+	mailFrom         addr.MailFrom
+	rcptTos          []*addr.RcptTo
+	headers          *header.Header
+	queueId          string
 	hasDecision      bool
 	decision         Decision
 	decisionErr      error
-	headers          *Header
+	origHeaders      *header.Header
 	body             *os.File
-	mailFrom         MailFrom
-	rcptTos          []RcptTo
+	origMailFrom     addr.MailFrom
+	origRcptTos      []*addr.RcptTo
 	replacementBody  io.Reader
 	quarantineReason *string
 }
 
-func (t *Transaction) cleanup() {
-	t.Headers = nil
+func (t *transaction) MTA() *MTA {
+	return &t.mta
+}
+
+func (t *transaction) Connect() *Connect {
+	return &t.connect
+}
+
+func (t *transaction) Helo() *Helo {
+	return &t.helo
+}
+
+func (t *transaction) QueueId() string {
+	return t.queueId
+}
+
+func (t *transaction) Log(format string, v ...any) {
+	if LogFunc != nil {
+		queueId := t.queueId
+		if queueId == "" {
+			queueId = "?"
+		}
+		LogFunc(fmt.Sprintf("[%s] %s", queueId, format), v...)
+	}
+}
+
+func (t *transaction) cleanup() {
 	t.headers = nil
-	t.RcptTos = nil
+	t.origHeaders = nil
 	t.rcptTos = nil
+	t.origRcptTos = nil
 	t.quarantineReason = nil
 	t.closeReplacementBody()
 	if t.body != nil {
@@ -106,7 +107,7 @@ func (t *Transaction) cleanup() {
 	}
 }
 
-func (t *Transaction) response() *milter.Response {
+func (t *transaction) response() *milter.Response {
 	switch t.decision {
 	case Accept:
 		return milter.RespAccept
@@ -126,21 +127,21 @@ func (t *Transaction) response() *milter.Response {
 	}
 }
 
-func (t *Transaction) makeDecision(ctx context.Context, decide DecisionModificationFunc) {
+func (t *transaction) makeDecision(ctx context.Context, decide DecisionModificationFunc) {
 	if t.hasDecision {
-		panic("calling makeDecision on a Transaction that already has made a decision")
+		panic("calling makeDecision on a transaction that already has made a decision")
 	}
 	// make copies of data that user can change
-	t.MailFrom = t.mailFrom
-	t.RcptTos = make([]RcptTo, len(t.rcptTos))
-	for i, r := range t.rcptTos {
-		t.RcptTos[i] = r
+	t.mailFrom = *t.origMailFrom.Copy()
+	t.rcptTos = make([]*addr.RcptTo, len(t.origRcptTos))
+	for i, r := range t.origRcptTos {
+		t.rcptTos[i] = r.Copy()
 	}
-	if t.headers != nil {
-		t.Headers = t.headers.copy()
+	if t.origHeaders != nil {
+		t.headers = t.origHeaders.Copy()
 	} else {
-		t.headers = &Header{}
-		t.Headers = &Header{}
+		t.origHeaders = &header.Header{}
+		t.headers = &header.Header{}
 	}
 	// call the decider
 	d, err := decide(ctx, t)
@@ -157,47 +158,47 @@ func (t *Transaction) makeDecision(ctx context.Context, decide DecisionModificat
 }
 
 // hasModifications checks quickly if there are any modifications - it does not actually compute them
-func (t *Transaction) hasModifications() bool {
+func (t *transaction) hasModifications() bool {
 	if !t.hasDecision {
 		return false
 	}
 	if t.quarantineReason != nil {
 		return true
 	}
-	if t.mailFrom.Addr != t.MailFrom.Addr || t.mailFrom.Args != t.MailFrom.Args {
+	if t.origMailFrom.Addr != t.mailFrom.Addr || t.origMailFrom.Args != t.mailFrom.Args {
 		return true
 	}
 	if t.replacementBody != nil {
 		return true
 	}
-	if len(t.rcptTos) != len(t.RcptTos) {
+	if len(t.origRcptTos) != len(t.rcptTos) {
 		return true
 	}
-	for i, r := range t.rcptTos { // might give false positives because order does not matter
-		if r.Addr != t.RcptTos[i].Addr || r.Args != t.RcptTos[i].Args {
+	for i, r := range t.origRcptTos { // might give false positives because order does not matter
+		if r.Addr != t.rcptTos[i].Addr || r.Args != t.rcptTos[i].Args {
 			return true
 		}
 	}
-	origFields := t.headers.Fields()
-	changedFields := t.Headers.Fields()
+	origFields := t.origHeaders.Fields()
+	changedFields := t.headers.Fields()
 	if origFields.Len() != changedFields.Len() {
 		return true
 	}
 	for origFields.Next() && changedFields.Next() {
-		if origFields.raw() != changedFields.raw() {
+		if !bytes.Equal(origFields.Raw(), changedFields.Raw()) {
 			return true
 		}
 	}
 	return false
 }
 
-func (t *Transaction) sendModifications(m *milter.Modifier) error {
-	if t.mailFrom.Addr != t.MailFrom.Addr || t.mailFrom.Args != t.MailFrom.Args {
-		if err := m.ChangeFrom(t.MailFrom.Addr, t.MailFrom.Args); err != nil {
+func (t *transaction) sendModifications(m *milter.Modifier) error {
+	if t.origMailFrom.Addr != t.mailFrom.Addr || t.origMailFrom.Args != t.mailFrom.Args {
+		if err := m.ChangeFrom(t.mailFrom.Addr, t.mailFrom.Args); err != nil {
 			return err
 		}
 	}
-	deletions, additions := calculateRcptToDiff(t.rcptTos, t.RcptTos)
+	deletions, additions := rcptto.Diff(t.origRcptTos, t.rcptTos)
 	for _, r := range deletions {
 		if err := m.DeleteRecipient(r.Addr); err != nil {
 			return err
@@ -208,11 +209,11 @@ func (t *Transaction) sendModifications(m *milter.Modifier) error {
 			return err
 		}
 	}
-	changeInsertOps, addOps := calculateHeaderModifications(t.headers, t.Headers)
+	changeInsertOps, addOps := header.Diff(t.origHeaders, t.headers)
 	// apply change/insert operations in reverse for the indexes to be correct
 	for i := len(changeInsertOps) - 1; i > -1; i-- {
 		op := changeInsertOps[i]
-		if op.Kind == kindInsert {
+		if op.Kind == header.KindInsert {
 			if err := m.InsertHeader(op.Index, op.Name, op.Value); err != nil {
 				return err
 			}
@@ -249,14 +250,14 @@ func (t *Transaction) sendModifications(m *milter.Modifier) error {
 	return nil
 }
 
-func (t *Transaction) addHeader(key string, raw string) {
-	if t.headers == nil {
-		t.headers = &Header{}
+func (t *transaction) addHeader(key string, raw []byte) {
+	if t.origHeaders == nil {
+		t.origHeaders = &header.Header{}
 	}
-	t.headers.addRaw(key, raw)
+	t.origHeaders.AddRaw(key, raw)
 }
 
-func (t *Transaction) addBodyChunk(chunk []byte) (err error) {
+func (t *transaction) addBodyChunk(chunk []byte) (err error) {
 	if t.body == nil {
 		t.body, err = os.CreateTemp("", "body-*")
 		if err != nil {
@@ -267,64 +268,36 @@ func (t *Transaction) addBodyChunk(chunk []byte) (err error) {
 	return
 }
 
-// HasRcptTo returns true when rcptTo is in the list of recipients.
-//
-// rcptTo gets compared to the existing recipients IDNA address aware.
-func (t *Transaction) HasRcptTo(rcptTo string) bool {
-	findR := RcptTo{
-		addr:      addr{Addr: rcptTo, Args: ""},
-		transport: "",
-	}
-	findLocal, findDomain := findR.Local(), findR.AsciiDomain()
-	for _, r := range t.RcptTos {
-		if r.Local() == findLocal && r.AsciiDomain() == findDomain {
-			return true
-		}
-	}
-	return false
+func (t *transaction) MailFrom() *addr.MailFrom {
+	return &t.mailFrom
 }
 
-// AddRcptTo adds the rcptTo (without angles) to the list of recipients with the ESMTP arguments esmtpArgs.
-// If rcptTo is already in the list of recipients only the esmtpArgs of this recipient get updated.
-//
-// rcptTo gets compared to the existing recipients IDNA address aware.
-func (t *Transaction) AddRcptTo(rcptTo string, esmtpArgs string) {
-	addR := RcptTo{
-		addr:      addr{Addr: rcptTo, Args: esmtpArgs},
-		transport: "smtp",
-	}
-	findLocal, findDomain := addR.Local(), addR.AsciiDomain()
-	for i, r := range t.RcptTos {
-		if r.Local() == findLocal && r.AsciiDomain() == findDomain {
-			t.RcptTos[i].Args = esmtpArgs
-			return
-		}
-	}
-	t.RcptTos = append(t.RcptTos, addR)
+func (t *transaction) ChangeMailFrom(from string, esmtpArgs string) {
+	t.mailFrom.Addr = from
+	t.mailFrom.Args = esmtpArgs
 }
 
-// DelRcptTo deletes the rcptTo (without angles) from the list of recipients.
-//
-// rcptTo gets compared to the existing recipients IDNA address aware.
-func (t *Transaction) DelRcptTo(rcptTo string) {
-	findR := RcptTo{
-		addr:      addr{Addr: rcptTo, Args: ""},
-		transport: "",
-	}
-	findLocal, findDomain := findR.Local(), findR.AsciiDomain()
-	for i, r := range t.RcptTos {
-		if r.Local() == findLocal && r.AsciiDomain() == findDomain {
-			t.RcptTos = append(t.RcptTos[:i], t.RcptTos[i+1:]...)
-			return
-		}
-	}
+func (t *transaction) RcptTos() []*addr.RcptTo {
+	return t.rcptTos
 }
 
-// Body gets you a [io.ReadSeeker] of the body. The reader seeked to the start of the body.
-//
-// This method returns nil when you used [WithDecisionAt] with anything other than [DecisionAtEndOfMessage]
-// or you used [WithoutBody].
-func (t *Transaction) Body() io.ReadSeeker {
+func (t *transaction) HasRcptTo(rcptTo string) bool {
+	return rcptto.Has(t.rcptTos, rcptTo)
+}
+
+func (t *transaction) AddRcptTo(rcptTo string, esmtpArgs string) {
+	t.rcptTos = rcptto.Add(t.rcptTos, rcptTo, esmtpArgs)
+}
+
+func (t *transaction) DelRcptTo(rcptTo string) {
+	t.rcptTos = rcptto.Del(t.rcptTos, rcptTo)
+}
+
+func (t *transaction) Headers() header2.Header {
+	return t.headers
+}
+
+func (t *transaction) Body() io.ReadSeeker {
 	if t.body == nil {
 		return nil
 	}
@@ -332,14 +305,12 @@ func (t *Transaction) Body() io.ReadSeeker {
 	return t.body
 }
 
-// ReplaceBody replaces the body of the current message with the contents
-// of the [io.Reader] r.
-func (t *Transaction) ReplaceBody(r io.Reader) {
+func (t *transaction) ReplaceBody(r io.Reader) {
 	t.closeReplacementBody()
 	t.replacementBody = r
 }
 
-func (t *Transaction) closeReplacementBody() {
+func (t *transaction) closeReplacementBody() {
 	if t.replacementBody != nil {
 		if closer, ok := t.replacementBody.(io.Closer); ok {
 			if err := closer.Close(); err != nil {
@@ -349,3 +320,5 @@ func (t *Transaction) closeReplacementBody() {
 		t.replacementBody = nil
 	}
 }
+
+var _ Trx = (*transaction)(nil)

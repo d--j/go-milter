@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/d--j/go-milter"
+	"github.com/d--j/go-milter/internal/header"
 	"github.com/d--j/go-milter/internal/wire"
+	"github.com/d--j/go-milter/mailfilter/addr"
 )
 
 type mockSession struct {
@@ -63,7 +65,7 @@ func newMockBackend() (*backend, *mockSession) {
 		},
 		leadingSpace: false,
 		decision:     nil,
-		transaction:  &Transaction{},
+		transaction:  &transaction{},
 	}, &mockSession{}
 }
 
@@ -80,7 +82,7 @@ func assertContinue(t *testing.T, resp *milter.Response, err error) {
 func Test_backend_Abort(t *testing.T) {
 	t.Parallel()
 	b, s := newMockBackend()
-	trx := Transaction{Connect: Connect{Host: "host"}, Helo: Helo{Name: "name"}}
+	trx := transaction{connect: Connect{Host: "host"}, helo: Helo{Name: "name"}}
 	b.transaction = &trx
 	if err := b.Abort(s.newModifier()); err != nil {
 		t.Errorf("expected nil, got %s", err)
@@ -88,7 +90,7 @@ func Test_backend_Abort(t *testing.T) {
 	if b.transaction == &trx {
 		t.Errorf("expected new transaction")
 	}
-	if b.transaction.Connect.Host != "host" || b.transaction.Helo.Name != "name" {
+	if b.transaction.Connect().Host != "host" || b.transaction.Helo().Name != "name" {
 		t.Errorf("expected Connect and Helo to persist")
 	}
 	b.transaction = nil
@@ -121,7 +123,7 @@ func Test_backend_BodyChunk(t *testing.T) {
 func Test_backend_Cleanup(t *testing.T) {
 	t.Parallel()
 	b, _ := newMockBackend()
-	trx := Transaction{}
+	trx := transaction{}
 	b.transaction = &trx
 	b.Cleanup()
 	if b.transaction == &trx {
@@ -134,7 +136,7 @@ func Test_backend_Connect(t *testing.T) {
 	b, s := newMockBackend()
 	resp, err := b.Connect("host", "family", 123, "127.0.0.2", s.newModifier())
 	assertContinue(t, resp, err)
-	expect := Connect{
+	expect := &Connect{
 		Host:   "host",
 		Family: "family",
 		Port:   123,
@@ -142,7 +144,7 @@ func Test_backend_Connect(t *testing.T) {
 		IfName: "ifname",
 		IfAddr: "127.0.0.3",
 	}
-	got := b.transaction.Connect
+	got := b.transaction.Connect()
 	if !reflect.DeepEqual(got, expect) {
 		t.Fatalf("Connect() = %v, expected %v", got, expect)
 	}
@@ -154,7 +156,7 @@ func Test_backend_Data(t *testing.T) {
 	resp, err := b.Data(s.newModifier())
 	assertContinue(t, resp, err)
 	expect := "Q123"
-	got := b.transaction.QueueId
+	got := b.transaction.QueueId()
 	if !reflect.DeepEqual(got, expect) {
 		t.Fatalf("Data() = %q, expected %q", got, expect)
 	}
@@ -164,9 +166,9 @@ func Test_backend_EndOfMessage(t *testing.T) {
 	t.Parallel()
 	b, s := newMockBackend()
 	expectedErr := errors.New("error")
-	b.decision = func(_ context.Context, trx *Transaction) (Decision, error) {
-		if trx.QueueId != "Q123" {
-			t.Fatalf("QueueId = %q, expected %q", trx.QueueId, "Q123")
+	b.decision = func(_ context.Context, trx Trx) (Decision, error) {
+		if trx.QueueId() != "Q123" {
+			t.Fatalf("queueId = %q, expected %q", trx.QueueId(), "Q123")
 		}
 		return nil, expectedErr
 	}
@@ -175,9 +177,9 @@ func Test_backend_EndOfMessage(t *testing.T) {
 		t.Fatalf("wrong return %v, %v", resp, err)
 	}
 	b.Cleanup()
-	b.transaction.addHeader("subject", "subject: test")
-	b.decision = func(_ context.Context, trx *Transaction) (Decision, error) {
-		if subj := trx.Headers.Get("Subject"); subj != " test" {
+	b.transaction.addHeader("subject", []byte("subject: test"))
+	b.decision = func(_ context.Context, trx Trx) (Decision, error) {
+		if subj := trx.Headers().Value("Subject"); subj != " test" {
 			t.Fatalf("Subject = %q, expected %q", subj, " test")
 		}
 		return nil, expectedErr
@@ -187,7 +189,7 @@ func Test_backend_EndOfMessage(t *testing.T) {
 		t.Fatalf("wrong return %v, %v", resp, err)
 	}
 	b.Cleanup()
-	b.decision = func(_ context.Context, trx *Transaction) (Decision, error) {
+	b.decision = func(_ context.Context, _ Trx) (Decision, error) {
 		return TempFail, nil
 	}
 	resp, err = b.EndOfMessage(s.newModifier())
@@ -195,7 +197,7 @@ func Test_backend_EndOfMessage(t *testing.T) {
 		t.Fatalf("wrong return %v, %v", resp, err)
 	}
 	b.Cleanup()
-	b.decision = func(_ context.Context, trx *Transaction) (Decision, error) {
+	b.decision = func(_ context.Context, _ Trx) (Decision, error) {
 		return Reject, nil
 	}
 	resp, err = b.EndOfMessage(s.newModifier())
@@ -203,7 +205,7 @@ func Test_backend_EndOfMessage(t *testing.T) {
 		t.Fatalf("wrong return %v, %v", resp, err)
 	}
 	b.Cleanup()
-	b.decision = func(_ context.Context, trx *Transaction) (Decision, error) {
+	b.decision = func(_ context.Context, _ Trx) (Decision, error) {
 		return Discard, nil
 	}
 	resp, err = b.EndOfMessage(s.newModifier())
@@ -211,7 +213,7 @@ func Test_backend_EndOfMessage(t *testing.T) {
 		t.Fatalf("wrong return %v, %v", resp, err)
 	}
 	b.Cleanup()
-	b.decision = func(_ context.Context, trx *Transaction) (Decision, error) {
+	b.decision = func(_ context.Context, _ Trx) (Decision, error) {
 		return CustomErrorResponse(400, "not right now"), nil
 	}
 	resp, err = b.EndOfMessage(s.newModifier())
@@ -219,13 +221,18 @@ func Test_backend_EndOfMessage(t *testing.T) {
 		t.Fatalf("wrong return %v, %v", resp, err)
 	}
 	b.Cleanup()
-	b.decision = func(_ context.Context, trx *Transaction) (Decision, error) {
+	b.decision = func(_ context.Context, _ Trx) (Decision, error) {
 		return CustomErrorResponse(200, "not right now"), nil
 	}
 	resp, err = b.EndOfMessage(s.newModifier())
 	if resp != milter.RespTempFail || err != nil {
 		t.Fatalf("wrong return %v, %v", resp, err)
 	}
+}
+
+func outputFields(hdr *header.Header) string {
+	bytes, _ := io.ReadAll(hdr.Reader())
+	return string(bytes)
 }
 
 func Test_backend_Header(t *testing.T) {
@@ -241,15 +248,13 @@ func Test_backend_Header(t *testing.T) {
 	b.leadingSpace = false
 	resp, err = b.Header("To", "\troot, nobody", s.newModifier())
 	assertContinue(t, resp, err)
-	expect := []*headerField{
-		{0, "From", "from: root"},
-		{1, "To", "To: root, nobody"},
-		{2, "To", "To: root, nobody"},
-		{3, "To", "To:\troot, nobody"},
+	expect, err := header.New([]byte("from: root\r\nTo: root, nobody\r\nTo: root, nobody\r\nTo:\troot, nobody\r\n\r\n"))
+	if err != nil {
+		panic(err)
 	}
-	got := b.transaction.headers.fields
+	got := b.transaction.origHeaders
 	if !reflect.DeepEqual(got, expect) {
-		t.Fatalf("Header() = %s, expected %s", outputFields(got), outputFields(expect))
+		t.Fatalf("Header() = %q, expected %q", outputFields(got), outputFields(expect))
 	}
 }
 
@@ -261,7 +266,7 @@ func Test_backend_Helo(t *testing.T) {
 	b, s := newMockBackend()
 	resp, err := b.Helo("helohost", s.newModifier())
 	assertContinue(t, resp, err)
-	expect := Helo{
+	expect := &Helo{
 		Name:        "helohost",
 		TlsVersion:  "tls-version",
 		Cipher:      "cipher",
@@ -269,7 +274,7 @@ func Test_backend_Helo(t *testing.T) {
 		CertSubject: "cert-subject",
 		CertIssuer:  "cert-issuer",
 	}
-	got := b.transaction.Helo
+	got := b.transaction.Helo()
 	if !reflect.DeepEqual(got, expect) {
 		t.Fatalf("Helo() = %v, expected %v", got, expect)
 	}
@@ -280,13 +285,8 @@ func Test_backend_MailFrom(t *testing.T) {
 	b, s := newMockBackend()
 	resp, err := b.MailFrom("root@localhost", "A=B", s.newModifier())
 	assertContinue(t, resp, err)
-	expect := MailFrom{
-		addr:                 addr{Addr: "root@localhost", Args: "A=B"},
-		transport:            "mail-mailer",
-		authenticatedUser:    "auth-authen",
-		authenticationMethod: "auth-type",
-	}
-	got := b.transaction.mailFrom
+	expect := addr.NewMailFrom("root@localhost", "A=B", "mail-mailer", "auth-authen", "auth-type")
+	got := b.transaction.origMailFrom
 	if !reflect.DeepEqual(got, expect) {
 		t.Fatalf("MailFrom() = %v, expected %v", got, expect)
 	}
@@ -300,14 +300,11 @@ func Test_backend_RcptTo(t *testing.T) {
 	s.macros.Set(milter.MacroRcptMailer, "2")
 	resp, err = b.RcptTo("nobody@localhost", "", s.newModifier())
 	assertContinue(t, resp, err)
-	expect := []RcptTo{{
-		addr:      addr{Addr: "root@localhost", Args: "A=B"},
-		transport: "rcpt-mailer",
-	}, {
-		addr:      addr{Addr: "nobody@localhost", Args: ""},
-		transport: "2",
-	}}
-	got := b.transaction.rcptTos
+	expect := []*addr.RcptTo{
+		addr.NewRcptTo("root@localhost", "A=B", "rcpt-mailer"),
+		addr.NewRcptTo("nobody@localhost", "", "2"),
+	}
+	got := b.transaction.origRcptTos
 	if !reflect.DeepEqual(got, expect) {
 		t.Fatalf("RcptTo() = %v, expected %v", got, expect)
 	}
@@ -319,7 +316,7 @@ func Test_backend_decideOrContinue(t *testing.T) {
 	resp, err := b.decideOrContinue(DecisionAtHelo, s.newModifier())
 	assertContinue(t, resp, err)
 	b.opts.decisionAt = DecisionAtHelo
-	b.decision = func(ctx context.Context, trx *Transaction) (Decision, error) {
+	b.decision = func(_ context.Context, _ Trx) (Decision, error) {
 		return Accept, nil
 	}
 	resp, err = b.decideOrContinue(DecisionAtHelo, s.newModifier())
@@ -330,7 +327,7 @@ func Test_backend_decideOrContinue(t *testing.T) {
 		t.Fatalf("got resp %v expected accept", resp)
 	}
 	b.Cleanup()
-	b.decision = func(ctx context.Context, trx *Transaction) (Decision, error) {
+	b.decision = func(_ context.Context, _ Trx) (Decision, error) {
 		return nil, io.EOF
 	}
 	_, err = b.decideOrContinue(DecisionAtHelo, s.newModifier())
@@ -391,7 +388,7 @@ func Test_backend_error(t *testing.T) {
 func Test_backend_makeDecision(t *testing.T) {
 	t.Parallel()
 	b, s := newMockBackend()
-	b.decision = func(ctx context.Context, trx *Transaction) (Decision, error) {
+	b.decision = func(_ context.Context, _ Trx) (Decision, error) {
 		return Accept, nil
 	}
 	b.makeDecision(s.newModifier())
@@ -402,7 +399,7 @@ func Test_backend_makeDecision(t *testing.T) {
 		t.Fatal("progress called")
 	}
 	b.Cleanup()
-	b.decision = func(ctx context.Context, trx *Transaction) (Decision, error) {
+	b.decision = func(_ context.Context, _ Trx) (Decision, error) {
 		time.Sleep(time.Second + 30*time.Millisecond)
 		return Accept, nil
 	}
