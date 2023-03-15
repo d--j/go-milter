@@ -9,11 +9,11 @@ import (
 
 func main() {
 	integration.RequiredTags("auth-plain", "auth-no", "tls-starttls", "tls-no")
-	integration.Test(func(ctx context.Context, trx *mailfilter.Transaction) (mailfilter.Decision, error) {
-		if trx.Helo.TlsVersion == "" {
+	integration.Test(func(ctx context.Context, trx mailfilter.Trx) (mailfilter.Decision, error) {
+		if trx.Helo().TlsVersion == "" {
 			return mailfilter.CustomErrorResponse(500, "No starttls"), nil
 		}
-		if trx.MailFrom.AuthenticatedUser() == "user1@example.com" {
+		if trx.MailFrom().AuthenticatedUser() == "user1@example.com" {
 			return mailfilter.CustomErrorResponse(502, "Ok"), nil
 		}
 		return mailfilter.CustomErrorResponse(501, "No authentication"), nil

@@ -10,26 +10,31 @@ import (
 	"testing"
 
 	"github.com/d--j/go-milter/internal/wire"
+	"github.com/d--j/go-milter/mailfilter/addr"
 	"github.com/emersion/go-message/mail"
 )
 
-func rcptFromAddr(in []addr) []RcptTo {
+type a struct {
+	Addr, Args string
+}
+
+func rcptFromAddr(in []a) []*addr.RcptTo {
 	if in == nil {
 		return nil
 	}
-	var out = []RcptTo{}
+	var out []*addr.RcptTo
 	for _, i := range in {
-		out = append(out, RcptTo{addr: i})
+		out = append(out, addr.NewRcptTo(i.Addr, i.Args, ""))
 	}
 	return out
 }
-func addrFromRcp(in []RcptTo) []addr {
+func addrFromRcp(in []*addr.RcptTo) []a {
 	if in == nil {
 		return nil
 	}
-	var out = []addr{}
+	var out []a
 	for _, i := range in {
-		out = append(out, addr{Addr: i.addr.Addr, Args: i.addr.Args})
+		out = append(out, a{Addr: i.Addr, Args: i.Args})
 	}
 	return out
 }
@@ -41,25 +46,25 @@ func TestTransaction_AddRcptTo(t1 *testing.T) {
 	}
 	tests := []struct {
 		name     string
-		existing []addr
+		existing []a
 		args     args
-		want     []addr
+		want     []a
 	}{
-		{"nil", nil, args{"", ""}, []addr{{}}},
-		{"empty", []addr{}, args{"", ""}, []addr{{}}},
-		{"set-esmtp-args", []addr{{Args: ""}}, args{"", "A=B"}, []addr{{Args: "A=B"}}},
-		{"add", []addr{{}}, args{"root@localhost", "A=B"}, []addr{{}, {Addr: "root@localhost", Args: "A=B"}}},
-		{"idna-utf8", []addr{{Addr: "root@スパム.example.com"}}, args{"root@xn--zck5b2b.example.com", "A=B"}, []addr{{Addr: "root@スパム.example.com", Args: "A=B"}}},
-		{"idna-ascii", []addr{{Addr: "root@xn--zck5b2b.example.com"}}, args{"root@スパム.example.com", "A=B"}, []addr{{Addr: "root@xn--zck5b2b.example.com", Args: "A=B"}}},
+		{"nil", nil, args{"", ""}, []a{{}}},
+		{"empty", []a{}, args{"", ""}, []a{{}}},
+		{"set-esmtp-args", []a{{Args: ""}}, args{"", "A=B"}, []a{{Args: "A=B"}}},
+		{"add", []a{{}}, args{"root@localhost", "A=B"}, []a{{}, {Addr: "root@localhost", Args: "A=B"}}},
+		{"idna-utf8", []a{{Addr: "root@スパム.example.com"}}, args{"root@xn--zck5b2b.example.com", "A=B"}, []a{{Addr: "root@スパム.example.com", Args: "A=B"}}},
+		{"idna-ascii", []a{{Addr: "root@xn--zck5b2b.example.com"}}, args{"root@スパム.example.com", "A=B"}, []a{{Addr: "root@xn--zck5b2b.example.com", Args: "A=B"}}},
 	}
 	for _, tt := range tests {
 		t1.Run(tt.name, func(t1 *testing.T) {
 
-			t := &Transaction{
-				RcptTos: rcptFromAddr(tt.existing),
+			t := &transaction{
+				rcptTos: rcptFromAddr(tt.existing),
 			}
 			t.AddRcptTo(tt.args.rcptTo, tt.args.esmtpArgs)
-			got := addrFromRcp(t.RcptTos)
+			got := addrFromRcp(t.RcptTos())
 			if !reflect.DeepEqual(got, tt.want) {
 				t1.Fatalf("RcptTos = %+v, want %+v", got, tt.want)
 			}
@@ -73,23 +78,23 @@ func TestTransaction_DelRcptTo(t1 *testing.T) {
 	}
 	tests := []struct {
 		name     string
-		existing []addr
+		existing []a
 		args     args
-		want     []addr
+		want     []a
 	}{
 		{"nil", nil, args{""}, nil},
-		{"empty", []addr{}, args{""}, []addr{}},
-		{"del", []addr{{Addr: "root@localhost"}}, args{"root@localhost"}, []addr{}},
-		{"idna-utf8", []addr{{Addr: "root@スパム.example.com"}}, args{"root@xn--zck5b2b.example.com"}, []addr{}},
-		{"idna-ascii", []addr{{Addr: "root@xn--zck5b2b.example.com"}}, args{"root@スパム.example.com"}, []addr{}},
+		{"empty", []a{}, args{""}, nil},
+		{"del", []a{{Addr: "root@localhost"}}, args{"root@localhost"}, nil},
+		{"idna-utf8", []a{{Addr: "root@スパム.example.com"}}, args{"root@xn--zck5b2b.example.com"}, nil},
+		{"idna-ascii", []a{{Addr: "root@xn--zck5b2b.example.com"}}, args{"root@スパム.example.com"}, nil},
 	}
 	for _, tt := range tests {
 		t1.Run(tt.name, func(t1 *testing.T) {
-			t := &Transaction{
-				RcptTos: rcptFromAddr(tt.existing),
+			t := &transaction{
+				rcptTos: rcptFromAddr(tt.existing),
 			}
 			t.DelRcptTo(tt.args.rcptTo)
-			got := addrFromRcp(t.RcptTos)
+			got := addrFromRcp(t.RcptTos())
 			if !reflect.DeepEqual(got, tt.want) {
 				t1.Fatalf("RcptTos = %v, want %v", got, tt.want)
 			}
@@ -103,19 +108,19 @@ func TestTransaction_HasRcptTo(t1 *testing.T) {
 	}
 	tests := []struct {
 		name     string
-		existing []addr
+		existing []a
 		args     args
 		want     bool
 	}{
 		{"nil", nil, args{""}, false},
-		{"empty", []addr{}, args{""}, false},
-		{"no", []addr{{Addr: "root@localhost"}}, args{""}, false},
-		{"yes", []addr{{Addr: "root@localhost"}}, args{"root@localhost"}, true},
+		{"empty", []a{}, args{""}, false},
+		{"no", []a{{Addr: "root@localhost"}}, args{""}, false},
+		{"yes", []a{{Addr: "root@localhost"}}, args{"root@localhost"}, true},
 	}
 	for _, tt := range tests {
 		t1.Run(tt.name, func(t1 *testing.T) {
-			t := &Transaction{
-				RcptTos: rcptFromAddr(tt.existing),
+			t := &transaction{
+				rcptTos: rcptFromAddr(tt.existing),
 			}
 			if got := t.HasRcptTo(tt.args.rcptTo); got != tt.want {
 				t1.Errorf("HasRcptTo() = %v, want %v", got, tt.want)
@@ -146,57 +151,57 @@ func TestTransaction_sendModifications(t1 *testing.T) {
 		want    []*wire.Message
 		wantErr bool
 	}{
-		{"noop", func(_ context.Context, trx *Transaction) (Decision, error) {
+		{"noop", func(_ context.Context, _ Trx) (Decision, error) {
 			return Accept, nil
 		}, nil, false},
-		{"mail-from", func(_ context.Context, trx *Transaction) (Decision, error) {
-			trx.MailFrom.Addr = "root@localhost"
-			trx.MailFrom.Args = "A=B"
+		{"mail-from", func(_ context.Context, trx Trx) (Decision, error) {
+			trx.ChangeMailFrom("root@localhost", "A=B")
 			return Accept, nil
 		}, []*wire.Message{mod(wire.ActChangeFrom, []byte("<root@localhost>\u0000A=B\u0000"))}, false},
-		{"mail-from-err", func(ctx context.Context, trx *Transaction) (Decision, error) {
-			trx.MailFrom.Addr = "root@localhost"
+		{"mail-from-err", func(ctx context.Context, trx Trx) (Decision, error) {
+			trx.ChangeMailFrom("root@localhost", "")
 			ctx.Value("s").(*mockSession).WritePacket = writeErr
 			return Accept, nil
 		}, nil, true},
-		{"del-rcpt", func(_ context.Context, trx *Transaction) (Decision, error) {
+		{"del-rcpt", func(_ context.Context, trx Trx) (Decision, error) {
 			trx.DelRcptTo("root@localhost")
 			return Accept, nil
 		}, []*wire.Message{mod(wire.ActDelRcpt, []byte("<root@localhost>\u0000"))}, false},
-		{"del-rcpt-noop", func(_ context.Context, trx *Transaction) (Decision, error) {
+		{"del-rcpt-noop", func(_ context.Context, trx Trx) (Decision, error) {
 			trx.DelRcptTo("someone@localhost")
 			return Accept, nil
 		}, nil, false},
-		{"del-rcpt-err", func(ctx context.Context, trx *Transaction) (Decision, error) {
+		{"del-rcpt-err", func(ctx context.Context, trx Trx) (Decision, error) {
 			trx.DelRcptTo("root@localhost")
 			ctx.Value("s").(*mockSession).WritePacket = writeErr
 			return Accept, nil
 		}, nil, true},
-		{"add-rcpt", func(_ context.Context, trx *Transaction) (Decision, error) {
+		{"add-rcpt", func(_ context.Context, trx Trx) (Decision, error) {
 			trx.AddRcptTo("someone@localhost", "")
 			return Accept, nil
 		}, []*wire.Message{mod(wire.ActAddRcpt, []byte("<someone@localhost>\u0000"))}, false},
-		{"add-rcpt-par", func(_ context.Context, trx *Transaction) (Decision, error) {
+		{"add-rcpt-par", func(_ context.Context, trx Trx) (Decision, error) {
 			trx.AddRcptTo("someone@localhost", "A=B")
 			return Accept, nil
 		}, []*wire.Message{mod(wire.ActAddRcptPar, []byte("<someone@localhost>\u0000A=B\u0000"))}, false},
-		{"add-rcpt-noop", func(_ context.Context, trx *Transaction) (Decision, error) {
+		{"add-rcpt-noop", func(_ context.Context, trx Trx) (Decision, error) {
 			trx.AddRcptTo("root@localhost", "")
 			return Accept, nil
 		}, nil, false},
-		{"add-rcpt-err", func(ctx context.Context, trx *Transaction) (Decision, error) {
+		{"add-rcpt-err", func(ctx context.Context, trx Trx) (Decision, error) {
 			trx.AddRcptTo("someone@localhost", "")
 			ctx.Value("s").(*mockSession).WritePacket = writeErr
 			return Accept, nil
 		}, nil, true},
-		{"replace-rcpt", func(_ context.Context, trx *Transaction) (Decision, error) {
-			trx.RcptTos[0].Addr = "someone@localhost"
+		{"replace-rcpt", func(_ context.Context, trx Trx) (Decision, error) {
+			trx.DelRcptTo("root@localhost")
+			trx.AddRcptTo("someone@localhost", "")
 			return Accept, nil
 		}, []*wire.Message{
 			mod(wire.ActDelRcpt, []byte("<root@localhost>\u0000")),
 			mod(wire.ActAddRcpt, []byte("<someone@localhost>\u0000")),
 		}, false},
-		{"replace-body", func(_ context.Context, trx *Transaction) (Decision, error) {
+		{"replace-body", func(_ context.Context, trx Trx) (Decision, error) {
 			got, _ := io.ReadAll(trx.Body())
 			if string(got) != "body" {
 				t1.Fatalf("wrong body %q", got)
@@ -206,53 +211,53 @@ func TestTransaction_sendModifications(t1 *testing.T) {
 		}, []*wire.Message{
 			mod(wire.ActReplBody, []byte("test")),
 		}, false},
-		{"replace-body-err", func(ctx context.Context, trx *Transaction) (Decision, error) {
+		{"replace-body-err", func(ctx context.Context, trx Trx) (Decision, error) {
 			trx.ReplaceBody(io.NopCloser(strings.NewReader("test")))
 			ctx.Value("s").(*mockSession).WritePacket = writeErr
 			return Accept, nil
 		}, nil, true},
-		{"add-header", func(_ context.Context, trx *Transaction) (Decision, error) {
-			trx.Headers.Add("X-Test", "1")
+		{"add-header", func(_ context.Context, trx Trx) (Decision, error) {
+			trx.Headers().Add("X-Test", "1")
 			return Accept, nil
 		}, []*wire.Message{
 			mod(wire.ActInsertHeader, []byte("\u0000\u0000\u0000\x68X-Test\u0000 1\u0000")),
 		}, false},
-		{"prepend-header", func(_ context.Context, trx *Transaction) (Decision, error) {
-			f := trx.Headers.Fields()
+		{"prepend-header", func(_ context.Context, trx Trx) (Decision, error) {
+			f := trx.Headers().Fields()
 			f.Next()
 			f.InsertBefore("X-Test", "1")
 			return Accept, nil
 		}, []*wire.Message{
 			mod(wire.ActInsertHeader, []byte("\u0000\u0000\u0000\u0000X-Test\u0000 1\u0000")),
 		}, false},
-		{"prepend-header-err", func(ctx context.Context, trx *Transaction) (Decision, error) {
-			f := trx.Headers.Fields()
+		{"prepend-header-err", func(ctx context.Context, trx Trx) (Decision, error) {
+			f := trx.Headers().Fields()
 			f.Next()
 			f.InsertBefore("X-Test", "1")
 			ctx.Value("s").(*mockSession).WritePacket = writeErr
 			return Accept, nil
 		}, nil, true},
-		{"change-header", func(_ context.Context, trx *Transaction) (Decision, error) {
-			f := trx.Headers.Fields()
+		{"change-header", func(_ context.Context, trx Trx) (Decision, error) {
+			f := trx.Headers().Fields()
 			f.Next()
 			f.SetAddressList([]*mail.Address{{Address: "root@localhost", Name: "root"}})
 			return Accept, nil
 		}, []*wire.Message{
 			mod(wire.ActChangeHeader, []byte("\u0000\u0000\u0000\u0001From\u0000 \"root\" <root@localhost>\u0000")),
 		}, false},
-		{"change-header-err", func(ctx context.Context, trx *Transaction) (Decision, error) {
-			f := trx.Headers.Fields()
+		{"change-header-err", func(ctx context.Context, trx Trx) (Decision, error) {
+			f := trx.Headers().Fields()
 			f.Next()
 			f.SetAddressList([]*mail.Address{{Address: "root@localhost", Name: "root"}})
 			ctx.Value("s").(*mockSession).WritePacket = writeErr
 			return Accept, nil
 		}, nil, true},
-		{"quarantine", func(ctx context.Context, trx *Transaction) (Decision, error) {
+		{"quarantine", func(ctx context.Context, trx Trx) (Decision, error) {
 			return QuarantineResponse("test"), nil
 		}, []*wire.Message{
 			mod(wire.ActQuarantine, []byte("test\u0000")),
 		}, false},
-		{"quarantine-err", func(ctx context.Context, trx *Transaction) (Decision, error) {
+		{"quarantine-err", func(ctx context.Context, trx Trx) (Decision, error) {
 			ctx.Value("s").(*mockSession).WritePacket = writeErr
 			return QuarantineResponse("test"), nil
 		}, nil, true},

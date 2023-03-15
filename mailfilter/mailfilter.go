@@ -18,13 +18,13 @@ import (
 // If your decision function is running longer than one second the [MailFilter] automatically sends progress notifications
 // every second so that MTA does not time out the milter connection.
 //
-// transaction is the [Transaction] object that you can inspect to see what the [MailFilter] got as information about the current SMTP transaction.
-// You can also use transaction to modify the transaction (e.g. change recipients, alter headers).
+// trx is the [Trx] object that you can inspect to see what the [MailFilter] got as information about the current SMTP transaction.
+// You can also use trx to modify the transaction (e.g. change recipients, alter headers).
 //
 // decision is your [Decision] about this SMTP transaction. Use [Accept], [TempFail], [Reject], [Discard] or [CustomErrorResponse].
 //
 // If you return a non-nil error [WithErrorHandling] will determine what happens with the current SMTP transaction.
-type DecisionModificationFunc func(ctx context.Context, transaction *Transaction) (decision Decision, err error)
+type DecisionModificationFunc func(ctx context.Context, trx Trx) (decision Decision, err error)
 
 type MailFilter struct {
 	wgDone sync.WaitGroup
@@ -101,7 +101,7 @@ func New(network, address string, decision DecisionModificationFunc, opts ...Opt
 				opts:         resolvedOptions,
 				decision:     decision,
 				leadingSpace: protocol&milter.OptHeaderLeadingSpace != 0,
-				transaction:  &Transaction{},
+				transaction:  &transaction{},
 			}
 		}),
 		milter.WithActions(actions),

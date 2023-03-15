@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	integration.Test(func(ctx context.Context, trx *mailfilter.Transaction) (mailfilter.Decision, error) {
+	integration.Test(func(ctx context.Context, trx mailfilter.Trx) (mailfilter.Decision, error) {
 		if trx.HasRcptTo("temp-fail@example.com") {
 			return mailfilter.TempFail, nil
 		}

@@ -1,4 +1,4 @@
-package mailfilter
+package addr
 
 import (
 	"reflect"
@@ -161,37 +161,6 @@ func TestRcptTo(t *testing.T) {
 	}
 }
 
-func Test_calculateRcptToDiff(t *testing.T) {
-	type args struct {
-		orig    []RcptTo
-		changed []RcptTo
-	}
-	tests := []struct {
-		name          string
-		args          args
-		wantDeletions []RcptTo
-		wantAdditions []RcptTo
-	}{
-		{"nil", args{nil, nil}, nil, nil},
-		{"empty", args{[]RcptTo{}, []RcptTo{}}, nil, nil},
-		{"remove", args{[]RcptTo{{addr: addr{Addr: "one"}}}, []RcptTo{}}, []RcptTo{{addr: addr{Addr: "one"}}}, nil},
-		{"add", args{[]RcptTo{}, []RcptTo{{addr: addr{Addr: "one"}}}}, nil, []RcptTo{{addr: addr{Addr: "one"}}}},
-		{"add double", args{[]RcptTo{}, []RcptTo{{addr: addr{Addr: "one"}}, {addr: addr{Addr: "one"}}}}, nil, []RcptTo{{addr: addr{Addr: "one"}}}},
-		{"change", args{[]RcptTo{{addr: addr{Addr: "one"}}}, []RcptTo{{addr: addr{Addr: "one", Args: "A=B"}}}}, []RcptTo{{addr: addr{Addr: "one"}}}, []RcptTo{{addr: addr{Addr: "one", Args: "A=B"}}}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gotDeletions, gotAdditions := calculateRcptToDiff(tt.args.orig, tt.args.changed)
-			if !reflect.DeepEqual(gotDeletions, tt.wantDeletions) {
-				t.Errorf("calculateRcptToDiff() gotDeletions = %v, want %v", gotDeletions, tt.wantDeletions)
-			}
-			if !reflect.DeepEqual(gotAdditions, tt.wantAdditions) {
-				t.Errorf("calculateRcptToDiff() gotAdditions = %v, want %v", gotAdditions, tt.wantAdditions)
-			}
-		})
-	}
-}
-
 func Test_split(t *testing.T) {
 	tests := []struct {
 		name string
@@ -208,5 +177,77 @@ func Test_split(t *testing.T) {
 				t.Errorf("split() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestNewMailFrom(t *testing.T) {
+	type args struct {
+		from                 string
+		esmtpArgs            string
+		transport            string
+		authenticatedUser    string
+		authenticationMethod string
+	}
+	tests := []struct {
+		name string
+		args args
+		want MailFrom
+	}{
+		{"works", args{"root", "A=B", "smtp", "user", "method"}, MailFrom{addr: addr{Addr: "root", Args: "A=B"}, transport: "smtp", authenticatedUser: "user", authenticationMethod: "method"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := NewMailFrom(tt.args.from, tt.args.esmtpArgs, tt.args.transport, tt.args.authenticatedUser, tt.args.authenticationMethod); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("NewMailFrom() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMailFrom_Copy(t *testing.T) {
+	t.Parallel()
+	null := (*MailFrom)(nil)
+	if got := null.Copy(); got != nil {
+		t.Errorf("Copy(nil) = %v, want %v", got, nil)
+	}
+	r1 := NewMailFrom("root", "", "", "", "")
+	got := r1.Copy()
+	if got == &r1 {
+		t.Errorf("Copy() did not create an independent copy")
+	}
+}
+
+func TestNewRcptTo(t *testing.T) {
+	type args struct {
+		to        string
+		esmtpArgs string
+		transport string
+	}
+	tests := []struct {
+		name string
+		args args
+		want *RcptTo
+	}{
+		{"works", args{"root", "A=B", "smtp"}, &RcptTo{addr: addr{Addr: "root", Args: "A=B"}, transport: "smtp"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := NewRcptTo(tt.args.to, tt.args.esmtpArgs, tt.args.transport); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("NewRcptTo() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRcptTo_Copy(t *testing.T) {
+	t.Parallel()
+	null := (*RcptTo)(nil)
+	if got := null.Copy(); got != nil {
+		t.Errorf("Copy(nil) = %v, want %v", got, nil)
+	}
+	r1 := NewRcptTo("root", "", "")
+	got := r1.Copy()
+	if got == r1 {
+		t.Errorf("Copy() did not create an independent copy")
 	}
 }

@@ -54,23 +54,23 @@ func main() {
 
   // create and start the mail filter
   mailFilter, err := mailfilter.New(protocol, address,
-    func(_ context.Context, trx *mailfilter.Transaction) (mailfilter.Decision, error) {
-      // Reject message when it was sent to our SPAM trap
+    func(_ context.Context, trx mailfilter.Trx) (mailfilter.Decision, error) {
+      // Quarantine mail when it is addressed to our SPAM trap
       if trx.HasRcptTo("spam-trap@スパム.example.com") {
-        return mailfilter.CustomErrorResponse(550, "5.7.1 No thank you"), nil
+        return mailfilter.QuarantineResponse("train as spam"), nil
       }
       // Prefix subject with [⚠️EXTERNAL] when user is not logged in
-      if trx.MailFrom.AuthenticatedUser() == "" {
-        subject, _ := trx.Headers.Subject()
+      if trx.MailFrom().AuthenticatedUser() == "" {
+        subject, _ := trx.Headers().Subject()
         if !strings.HasPrefix(subject, "[⚠️EXTERNAL] ") {
           subject = "[⚠️EXTERNAL] " + subject
         }
-        trx.Headers.SetSubject(subject)
+        trx.Headers().SetSubject(subject)
       }
       return mailfilter.Accept, nil
     },
-    // optimization: we do not need the body of the message for our decision
-    mailfilter.WithoutBody(),
+    // optimization: call the decision function when all headers were sent to us
+    mailfilter.WithDecisionAt(mailfilter.DecisionAtEndOfHeaders),
   )
   if err != nil {
     log.Fatal(err)
