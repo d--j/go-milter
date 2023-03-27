@@ -174,6 +174,8 @@ func (m *serverSession) Process(msg *wire.Message) (*Response, error) {
 				if addr != nil {
 					address = addr.String()
 				}
+			} else if strings.HasPrefix(address, "IPv6:") {
+				addr = net.ParseIP(address[5:])
 			} else {
 				addr = net.ParseIP(address)
 			}
