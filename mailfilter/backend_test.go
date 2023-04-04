@@ -113,7 +113,7 @@ func Test_backend_BodyChunk(t *testing.T) {
 		t.Fatal("body file is nil")
 	}
 	_, _ = b.transaction.body.Seek(0, io.SeekStart)
-	data, err := io.ReadAll(b.transaction.body)
+	data, _ := io.ReadAll(b.transaction.body)
 	b.transaction.cleanup()
 	if string(data) != "testtest" {
 		t.Fatalf("got %q, expected %q", data, "testtest")

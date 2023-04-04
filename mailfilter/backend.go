@@ -155,8 +155,11 @@ func (b *backend) Header(name string, value string, _ *milter.Modifier) (*milter
 			value = " " + value
 		}
 	}
-	if name == "" || value == "" {
-		milter.LogWarning("milter: skip header %q because we got an empty value or name", name)
+	if value == "" {
+		value = " "
+	}
+	if name == "" {
+		milter.LogWarning("skip header because we got an empty  name")
 	} else {
 		b.transaction.addHeader(name, []byte(fmt.Sprintf("%s:%s", name, value)))
 	}
