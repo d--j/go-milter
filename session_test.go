@@ -260,7 +260,7 @@ func Test_milterSession_Process(t *testing.T) {
 			check: func(t *testing.T, s *serverSession) {
 				p := s.backend.(*processTestMilter)
 				if p.family != "tcp6" {
-					t.Errorf("expected tcp4, got %q", p.family)
+					t.Errorf("expected tcp6, got %q", p.family)
 				}
 				if p.addr != "::" {
 					t.Errorf("expected ::, got %q", p.addr)
@@ -278,7 +278,7 @@ func Test_milterSession_Process(t *testing.T) {
 			check: func(t *testing.T, s *serverSession) {
 				p := s.backend.(*processTestMilter)
 				if p.family != "tcp6" {
-					t.Errorf("expected tcp4, got %q", p.family)
+					t.Errorf("expected tcp6, got %q", p.family)
 				}
 				if p.addr != "::" {
 					t.Errorf("expected ::, got %q", p.addr)
@@ -291,6 +291,24 @@ func Test_milterSession_Process(t *testing.T) {
 				}
 			},
 		}, &wire.Message{wire.CodeConn, []byte{'h', 0, '6', 9, 251, '[', ':', ':', ']', 0}}, cont, false},
+		{"conn tcp6 protocol 3", fields{
+			backend: &processTestMilter{},
+			check: func(t *testing.T, s *serverSession) {
+				p := s.backend.(*processTestMilter)
+				if p.family != "tcp6" {
+					t.Errorf("expected tcp6, got %q", p.family)
+				}
+				if p.addr != "::1" {
+					t.Errorf("expected ::1, got %q", p.addr)
+				}
+				if p.port != 2555 {
+					t.Errorf("expected 2555, got %v", p.port)
+				}
+				if p.host != "h" {
+					t.Errorf("expected \"h\", got %q", p.host)
+				}
+			},
+		}, &wire.Message{wire.CodeConn, []byte{'h', 0, '6', 9, 251, 'I', 'P', 'v', '6', ':', '0', ':', '0', ':', '0', ':', '0', ':', '0', ':', '0', ':', '0', ':', '1', 0}}, cont, false},
 		{"conn tcp6 protocol err", fields{
 			backend: &processTestMilter{},
 		}, &wire.Message{wire.CodeConn, []byte{'h', 0, '6', 9, 251, '[', '@', ']', 0}}, nil, true},
