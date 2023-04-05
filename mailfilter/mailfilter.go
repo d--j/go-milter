@@ -3,9 +3,6 @@ package mailfilter
 
 import (
 	"context"
-	"fmt"
-	"log"
-	"log/syslog"
 	"net"
 	"sync"
 
@@ -43,18 +40,6 @@ func New(network, address string, decision DecisionModificationFunc, opts ...Opt
 
 	for _, o := range opts {
 		o(&resolvedOptions)
-	}
-
-	if resolvedOptions.syslogPrefix != "" {
-		sysLogger, err := syslog.NewLogger(syslog.LOG_MAIL, 0)
-		if err != nil {
-			return nil, err
-		}
-		sysLogger.SetPrefix(resolvedOptions.syslogPrefix)
-		milter.LogWarning = func(format string, v ...interface{}) {
-			log.Printf(fmt.Sprintf("milter: warning: %s", format), v...)
-			sysLogger.Printf(format, v...)
-		}
 	}
 
 	actions := milter.AllClientSupportedActionMasks

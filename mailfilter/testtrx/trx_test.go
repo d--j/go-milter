@@ -63,10 +63,4 @@ func TestTestTrx(t *testing.T) {
 	if !reflect.DeepEqual(m, expected) {
 		t.Fatalf("trx.Modifications() = %+v, want %+v", m, expected)
 	}
-
-	trx.Log("test")
-	expectedLogs := []string{"test"}
-	if got := trx.Logs(); !reflect.DeepEqual(got, expectedLogs) {
-		t.Fatalf("trx.Logs() = %+v, want %+v", got, expectedLogs)
-	}
 }

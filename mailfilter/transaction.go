@@ -3,7 +3,6 @@ package mailfilter
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"regexp"
@@ -81,16 +80,6 @@ func (t *transaction) Helo() *Helo {
 
 func (t *transaction) QueueId() string {
 	return t.queueId
-}
-
-func (t *transaction) Log(format string, v ...any) {
-	if LogFunc != nil {
-		queueId := t.queueId
-		if queueId == "" {
-			queueId = "?"
-		}
-		LogFunc(fmt.Sprintf("[%s] %s", queueId, format), v...)
-	}
 }
 
 func (t *transaction) cleanup() {

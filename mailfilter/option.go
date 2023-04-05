@@ -41,7 +41,6 @@ type options struct {
 	decisionAt    DecisionAt
 	errorHandling ErrorHandling
 	skipBody      bool
-	syslogPrefix  string
 }
 
 type Option func(opt *options)
@@ -66,14 +65,5 @@ func WithErrorHandling(errorHandling ErrorHandling) Option {
 func WithoutBody() Option {
 	return func(opt *options) {
 		opt.skipBody = true
-	}
-}
-
-// WithSyslog enables logging to syslog with a prefix of prefix.
-// This is a global option.
-// All calls to [github.com/d--j/go-milter.LogWarning] will be also send to the syslog.
-func WithSyslog(prefix string) Option {
-	return func(opt *options) {
-		opt.syslogPrefix = prefix
 	}
 }

@@ -11,7 +11,6 @@ import (
 
 func Filter(_ context.Context, trx mailfilter.Trx) (mailfilter.Decision, error) {
 	trx.ChangeMailFrom("", "A=B")
-	trx.Log("test")
 	return mailfilter.Accept, nil
 }
 
@@ -48,8 +47,6 @@ func ExampleTrx() {
 	for _, m := range trx.Modifications() {
 		fmt.Println(m)
 	}
-	fmt.Println(trx.Logs())
 
 	// Output: {0  A=B 0   []}
-	// [test]
 }

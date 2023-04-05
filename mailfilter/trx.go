@@ -2,7 +2,6 @@ package mailfilter
 
 import (
 	"io"
-	"log"
 
 	"github.com/d--j/go-milter/mailfilter/addr"
 	"github.com/d--j/go-milter/mailfilter/header"
@@ -66,12 +65,4 @@ type Trx interface {
 	//
 	// Only populated if [WithDecisionAt] is bigger than [DecisionAtMailFrom].
 	QueueId() string
-
-	// Log uses [LogFunc] to log the data. The [Trx.QueueId] will be prepended.
-	Log(format string, v ...any)
 }
-
-// LogFunc is the fmt.Printf-like function that [Trx.Log] uses.
-// You can overwrite this variable to use something different than [log.Printf].
-// If you assign nil to it, all [Trx.Log] calls are no-ops.
-var LogFunc = log.Printf

@@ -3,7 +3,6 @@ package testtrx
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 
 	"github.com/d--j/go-milter/internal/header"
@@ -51,7 +50,6 @@ type Trx struct {
 	rcptTos         []*addr.RcptTo
 	origRcptTos     []*addr.RcptTo
 	queueId         string
-	logs            []string
 	header          *header.Header
 	origHeader      *header.Header
 	body            io.ReadSeeker
@@ -185,14 +183,6 @@ func (t *Trx) QueueId() string {
 func (t *Trx) SetQueueId(value string) *Trx {
 	t.queueId = value
 	return t
-}
-
-func (t *Trx) Log(format string, v ...any) {
-	t.logs = append(t.logs, fmt.Sprintf(format, v...))
-}
-
-func (t *Trx) Logs() []string {
-	return t.logs
 }
 
 func (t *Trx) Modifications() []Modification {
