@@ -35,6 +35,30 @@ func testHeader() *Header {
 	}}
 }
 
+func Test_unfold(t *testing.T) {
+	tests := []struct {
+		lines string
+		want  string
+	}{
+		{"one", "one"},
+		{"one\ntwo", "one two"},
+		{"one\n two", "one two"},
+		{"one\n\ttwo", "one two"},
+		{"one\r\ntwo", "one two"},
+		{"one\r\n\ttwo", "one two"},
+		{"one\r\n two", "one two"},
+		{"one\r\n  two", "one two"},
+		{"one\r\n \t two", "one two"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.lines, func(t *testing.T) {
+			if got := unfold(tt.lines); got != tt.want {
+				t.Errorf("unfold() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 var root, nobody = mail.Address{
 	Name:    "",
 	Address: "root@localhost",
@@ -100,7 +124,7 @@ func TestHeaderFields_Del(t *testing.T) {
 	}
 }
 
-func TestHeaderFields_Get(t *testing.T) {
+func TestHeaderFields_Value(t *testing.T) {
 	type fields struct {
 		cursor int
 		h      *Header
@@ -123,6 +147,35 @@ func TestHeaderFields_Get(t *testing.T) {
 				helper: newHelper(),
 			}
 			if got := f.Value(); got != tt.want {
+				t.Errorf("Value() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHeaderFields_UnfoldedValue(t *testing.T) {
+	type fields struct {
+		cursor int
+		h      *Header
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   string
+	}{
+		{"From", fields{0, testHeader()}, " <root@localhost>"},
+		{"To", fields{1, testHeader()}, "  <root@localhost>, <nobody@localhost>"},
+		{"Subject", fields{2, testHeader()}, " =?UTF-8?Q?=F0=9F=9F=A2?="},
+		{"Date", fields{3, testHeader()}, "\tWed, 01 Mar 2023 15:47:33 +0100"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := &Fields{
+				cursor: tt.fields.cursor,
+				h:      tt.fields.h,
+				helper: newHelper(),
+			}
+			if got := f.UnfoldedValue(); got != tt.want {
 				t.Errorf("Value() = %v, want %v", got, tt.want)
 			}
 		})
@@ -692,7 +745,7 @@ func TestHeader_Fields(t *testing.T) {
 	}
 }
 
-func TestHeader_Get(t *testing.T) {
+func TestHeader_Value(t *testing.T) {
 	type args struct {
 		key string
 	}
@@ -711,6 +764,31 @@ func TestHeader_Get(t *testing.T) {
 				fields: tt.fields,
 			}
 			if got := h.Value(tt.args.key); got != tt.want {
+				t.Errorf("Value() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHeader_UnfoldedValue(t *testing.T) {
+	type args struct {
+		key string
+	}
+	tests := []struct {
+		name   string
+		fields []*Field
+		args   args
+		want   string
+	}{
+		{"works", testHeader().fields, args{"fRoM"}, " <root@localhost>"},
+		{"not found", testHeader().fields, args{"not-there"}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := &Header{
+				fields: tt.fields,
+			}
+			if got := h.UnfoldedValue(tt.args.key); got != tt.want {
 				t.Errorf("Value() = %v, want %v", got, tt.want)
 			}
 		})

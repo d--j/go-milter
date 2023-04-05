@@ -15,6 +15,9 @@ type Header interface {
 	// Value returns the value of the first field which canonical key is equal to the canonical version of key.
 	// Returns the empty string when key was not found in header.
 	Value(key string) string
+	// UnfoldedValue returns the unfolded value (newlines replaced with spaces) of the first field which canonical key is equal to the canonical version of key.
+	// Returns the empty string when key was not found in header.
+	UnfoldedValue(key string) string
 	// Text returns the decoded value of the first field which canonical key is equal to the canonical version of key.
 	// Returns the empty string and no error when key was not found in header.
 	Text(key string) (string, error)
@@ -74,6 +77,9 @@ type Fields interface {
 	// Value returns the raw value of the current header field.
 	// Panics when called before calling Next or when Next returned false.
 	Value() string
+	// UnfoldedValue returns the unfolded value (newlines replaced with spaces) of the current header field.
+	// Panics when called before calling Next or when Next returned false.
+	UnfoldedValue() string
 	// Text returns the decoded text of the current header field.
 	// An error is returned when the text could not be decoded (e.g. because the charset is unknown).
 	// Panics when called before calling Next or when Next returned false.
