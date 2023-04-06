@@ -6,12 +6,27 @@ import (
 	"io"
 	netmail "net/mail"
 	"net/textproto"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/d--j/go-milter/mailfilter/header"
 	"github.com/emersion/go-message/mail"
 )
+
+var unfoldRegex = regexp.MustCompile(`\r?\n\s*`)
+
+func unfold(lines string) string {
+	return unfoldRegex.ReplaceAllString(lines, " ")
+}
+
+func formatAddressList(l []*mail.Address) string {
+	formatted := make([]string, len(l))
+	for i, a := range l {
+		formatted[i] = a.String()
+	}
+	return strings.Join(formatted, ",\r\n ")
+}
 
 type Field struct {
 	Index        int
@@ -25,6 +40,10 @@ func (f *Field) Key() string {
 
 func (f *Field) Value() string {
 	return string(f.Raw[len(f.CanonicalKey)+1:])
+}
+
+func (f *Field) UnfoldedValue() string {
+	return unfold(string(f.Raw[len(f.CanonicalKey)+1:]))
 }
 
 func (f *Field) Deleted() bool {
@@ -94,6 +113,16 @@ func (h *Header) Value(key string) string {
 	return ""
 }
 
+func (h *Header) UnfoldedValue(key string) string {
+	canonicalKey := textproto.CanonicalMIMEHeaderKey(key)
+	for _, f := range h.fields {
+		if f.CanonicalKey == canonicalKey {
+			return f.UnfoldedValue()
+		}
+	}
+	return ""
+}
+
 func (h *Header) Text(key string) (string, error) {
 	if h.helper == nil {
 		h.helper = newHelper()
@@ -101,7 +130,7 @@ func (h *Header) Text(key string) (string, error) {
 	canonicalKey := textproto.CanonicalMIMEHeaderKey(key)
 	for _, f := range h.fields {
 		if f.CanonicalKey == canonicalKey {
-			h.helper.Set(helperKey, f.Value())
+			h.helper.Set(helperKey, f.UnfoldedValue())
 			return h.helper.Text(helperKey)
 		}
 	}
@@ -115,7 +144,7 @@ func (h *Header) AddressList(key string) ([]*mail.Address, error) {
 	canonicalKey := textproto.CanonicalMIMEHeaderKey(key)
 	for _, f := range h.fields {
 		if f.CanonicalKey == canonicalKey {
-			h.helper.Set(helperKey, f.Value())
+			h.helper.Set(helperKey, f.UnfoldedValue())
 			return h.helper.AddressList(helperKey)
 		}
 	}
@@ -148,11 +177,7 @@ func (h *Header) SetText(key string, value string) {
 }
 
 func (h *Header) SetAddressList(key string, addresses []*mail.Address) {
-	if h.helper == nil {
-		h.helper = newHelper()
-	}
-	h.helper.SetAddressList(helperKey, addresses)
-	h.Set(key, h.helper.Get(helperKey))
+	h.Set(key, formatAddressList(addresses))
 }
 
 func (h *Header) Subject() (string, error) {
@@ -251,13 +276,17 @@ func (f *Fields) Value() string {
 	return f.h.fields[f.index()].Value()
 }
 
+func (f *Fields) UnfoldedValue() string {
+	return f.h.fields[f.index()].UnfoldedValue()
+}
+
 func (f *Fields) Text() (string, error) {
-	f.helper.Set(helperKey, f.Value())
+	f.helper.Set(helperKey, f.UnfoldedValue())
 	return f.helper.Text(helperKey)
 }
 
 func (f *Fields) AddressList() ([]*mail.Address, error) {
-	f.helper.Set(helperKey, f.Value())
+	f.helper.Set(helperKey, f.UnfoldedValue())
 	return f.helper.AddressList(helperKey)
 }
 
@@ -284,8 +313,7 @@ func (f *Fields) SetText(value string) {
 }
 
 func (f *Fields) addressList(value []*mail.Address) string {
-	f.helper.SetAddressList(helperKey, value)
-	return f.helper.Get(helperKey)
+	return formatAddressList(value)
 }
 
 func (f *Fields) SetAddressList(value []*mail.Address) {

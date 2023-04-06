@@ -729,8 +729,14 @@ func DiffOutput(expected, got *Output) (string, bool) {
 	return b.String(), ok
 }
 
+var unfoldRegex = regexp.MustCompile(`\r?\n\s*`)
+
+func unfold(in []byte) []byte {
+	return unfoldRegex.ReplaceAll(in, []byte(" "))
+}
+
 // CompareOutputSendmail is a relaxed compare function that does only check
-// that the header values are all there – the order does not matter.
+// that the header values are all there – the order and folding do not matter.
 func CompareOutputSendmail(expected, got *Output) bool {
 	if expected == nil && got == nil {
 		return true
@@ -751,10 +757,34 @@ func CompareOutputSendmail(expected, got *Output) bool {
 		return false
 	}
 	if expected.Header != nil {
-		expectedLines := bytes.Split(expected.Header, []byte{'\r', '\n'})
-		gotLines := bytes.Split(got.Header, []byte{'\r', '\n'})
-		if len(expectedLines) != len(gotLines) {
+		r, err := mail.CreateReader(bytes.NewReader(expected.Header))
+		if err != nil {
 			return false
+		}
+		exFields := r.Header.Fields()
+		r, err = mail.CreateReader(bytes.NewReader(got.Header))
+		if err != nil {
+			return false
+		}
+		gotFields := r.Header.Fields()
+		if exFields.Len() != gotFields.Len() {
+			return false
+		}
+		expectedLines := make([][]byte, 0, exFields.Len())
+		for exFields.Next() {
+			b, err := exFields.Raw()
+			if err != nil {
+				return false
+			}
+			expectedLines = append(expectedLines, unfold(b[:len(b)-2]))
+		}
+		gotLines := make([][]byte, 0, gotFields.Len())
+		for gotFields.Next() {
+			b, err := gotFields.Raw()
+			if err != nil {
+				return false
+			}
+			gotLines = append(gotLines, unfold(b[:len(b)-2]))
 		}
 	outer:
 		for _, e := range expectedLines {
