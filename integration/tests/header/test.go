@@ -7,6 +7,7 @@ import (
 
 	"github.com/d--j/go-milter/integration"
 	"github.com/d--j/go-milter/mailfilter"
+	"github.com/emersion/go-message/mail"
 )
 
 func main() {
@@ -57,6 +58,13 @@ func main() {
 			}
 			trx.Headers().Add("X-ADD1", "Test")
 			trx.Headers().Add("X-ADD2", "Test")
+		case "change-to@example.com":
+			addr, err := trx.Headers().AddressList("To")
+			if err != nil {
+				return nil, err
+			}
+			addr = append(addr, &mail.Address{Address: "to@example.org"})
+			trx.Headers().SetAddressList("To", addr)
 		default:
 			return mailfilter.CustomErrorResponse(500, "unknown mail from"), nil
 		}

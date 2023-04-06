@@ -20,6 +20,14 @@ func unfold(lines string) string {
 	return unfoldRegex.ReplaceAllString(lines, " ")
 }
 
+func formatAddressList(l []*mail.Address) string {
+	formatted := make([]string, len(l))
+	for i, a := range l {
+		formatted[i] = a.String()
+	}
+	return strings.Join(formatted, ",\r\n ")
+}
+
 type Field struct {
 	Index        int
 	CanonicalKey string
@@ -169,11 +177,7 @@ func (h *Header) SetText(key string, value string) {
 }
 
 func (h *Header) SetAddressList(key string, addresses []*mail.Address) {
-	if h.helper == nil {
-		h.helper = newHelper()
-	}
-	h.helper.SetAddressList(helperKey, addresses)
-	h.Set(key, h.helper.Get(helperKey))
+	h.Set(key, formatAddressList(addresses))
 }
 
 func (h *Header) Subject() (string, error) {
@@ -309,8 +313,7 @@ func (f *Fields) SetText(value string) {
 }
 
 func (f *Fields) addressList(value []*mail.Address) string {
-	f.helper.SetAddressList(helperKey, value)
-	return f.helper.Get(helperKey)
+	return formatAddressList(value)
 }
 
 func (f *Fields) SetAddressList(value []*mail.Address) {

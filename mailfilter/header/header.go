@@ -32,6 +32,7 @@ type Header interface {
 	// If key was not found, this a new header field gets added.
 	SetText(key string, value string)
 	// SetAddressList sets the value of the first header field with the canonical key "key" to "value" (encoded as address list).
+	// The address list is encoded as multi-line header field when the MTA supports this (Sendmail does not).
 	// If key was not found, this a new header field gets added.
 	SetAddressList(key string, addresses []*mail.Address)
 	// Subject returns the decoded value of the Subject field.
@@ -94,6 +95,7 @@ type Fields interface {
 	// Panics when called before calling Next or when Next returned false.
 	SetText(value string)
 	// SetAddressList sets the value of the current header field as address list value.
+	// The value is encoded as multi-line header field when the MTA supports this (Sendmail does not).
 	// Panics when called before calling Next or when Next returned false.
 	SetAddressList(value []*mail.Address)
 	// Del marks the current header field as deleted.
@@ -109,6 +111,7 @@ type Fields interface {
 	// Panics when called before calling Next or when Next returned false.
 	ReplaceText(key string, value string)
 	// ReplaceAddressList replaces the current field with a new field with key and value.
+	// The value is encoded as multi-line header field when the MTA supports this (Sendmail does not).
 	// Panics when called before calling Next or when Next returned false.
 	ReplaceAddressList(key string, value []*mail.Address)
 	// InsertBefore adds a new field in front of the current field with key and value (as-is).
@@ -118,6 +121,7 @@ type Fields interface {
 	// Panics when called before calling Next or when Next returned false.
 	InsertTextBefore(key string, value string)
 	// InsertAddressListBefore adds a new field in front of the current field with key and value.
+	// The value is encoded as multi-line header field when the MTA supports this (Sendmail does not).
 	// Panics when called before calling Next or when Next returned false.
 	InsertAddressListBefore(key string, value []*mail.Address)
 	// InsertAfter adds a new field after the current field with key and value (as-is).
@@ -127,6 +131,7 @@ type Fields interface {
 	// Panics when called before calling Next or when Next returned false.
 	InsertTextAfter(key string, value string)
 	// InsertAddressListAfter adds a new field after the current field with key and value.
+	// The value is encoded as multi-line header field when the MTA supports this (Sendmail does not).
 	// Panics when called before calling Next or when Next returned false.
 	InsertAddressListAfter(key string, value []*mail.Address)
 }

@@ -254,8 +254,8 @@ func TestHeaderFields_GetText(t *testing.T) {
 
 func outputFields(fields []*Field) string {
 	h := Header{fields: fields}
-	bytes, _ := io.ReadAll(h.Reader())
-	return string(bytes)
+	b, _ := io.ReadAll(h.Reader())
+	return string(b)
 }
 
 func TestHeaderFields_InsertAfter(t *testing.T) {
@@ -566,7 +566,7 @@ func TestHeaderFields_SetAddressList(t *testing.T) {
 		want   *Field
 	}{
 		{"One", fields{0, testHeader()}, args{[]*mail.Address{&nobody}}, &Field{0, "From", []byte("From: <nobody@localhost>")}},
-		{"Two", fields{1, testHeader()}, args{[]*mail.Address{&nobody, &root}}, &Field{1, "To", []byte("To: <nobody@localhost>, <root@localhost>")}},
+		{"Two", fields{1, testHeader()}, args{[]*mail.Address{&nobody, &root}}, &Field{1, "To", []byte("To: <nobody@localhost>,\r\n <root@localhost>")}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -578,7 +578,7 @@ func TestHeaderFields_SetAddressList(t *testing.T) {
 			f.SetAddressList(tt.args.value)
 			got := f.h.fields[f.index()]
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("SetAddressList() = %v, want %v", got, tt.want)
+				t.Errorf("SetAddressList() = %q, want %q", got, tt.want)
 			}
 		})
 	}
