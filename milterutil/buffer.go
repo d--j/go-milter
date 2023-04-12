@@ -7,8 +7,8 @@ import (
 	"sync"
 )
 
-// FixedBufferScanner is a wrapper around a bufio.Scanner that produces fixed size chunks of data
-// given an io.Reader.
+// FixedBufferScanner is a wrapper around a [bufio.Scanner] that produces fixed size chunks of data
+// given an [io.Reader].
 type FixedBufferScanner struct {
 	bufferSize uint32
 	buffer     []byte
@@ -54,9 +54,9 @@ func (f *FixedBufferScanner) Err() error {
 }
 
 // Close need to be called when you are done with the FixedBufferScanner because we maintain a shared pool
-// of FixedBufferScanner.
+// of FixedBufferScanner objects.
 //
-// Close does not close the underlying io.Reader. It is the responsibility of the caller to do this.
+// Close does not close the underlying [io.Reader]. It is the responsibility of the caller to do this.
 func (f *FixedBufferScanner) Close() {
 	f.pool.Put(f)
 }
