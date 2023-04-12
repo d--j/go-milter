@@ -48,22 +48,23 @@ type Helo struct {
 // transaction can be used to examine the data of the current mail transaction and
 // also send changes to the message back to the MTA.
 type transaction struct {
-	mta              MTA
-	connect          Connect
-	helo             Helo
-	mailFrom         addr.MailFrom
-	rcptTos          []*addr.RcptTo
-	headers          *header.Header
-	queueId          string
-	hasDecision      bool
-	decision         Decision
-	decisionErr      error
-	origHeaders      *header.Header
-	body             *os.File
-	origMailFrom     addr.MailFrom
-	origRcptTos      []*addr.RcptTo
-	replacementBody  io.Reader
-	quarantineReason *string
+	mta                MTA
+	connect            Connect
+	helo               Helo
+	mailFrom           addr.MailFrom
+	origMailFrom       addr.MailFrom
+	rcptTos            []*addr.RcptTo
+	origRcptTos        []*addr.RcptTo
+	headers            *header.Header
+	origHeaders        *header.Header
+	enforceHeaderOrder bool
+	body               *os.File
+	replacementBody    io.Reader
+	queueId            string
+	hasDecision        bool
+	decision           Decision
+	decisionErr        error
+	quarantineReason   *string
 }
 
 func (t *transaction) MTA() *MTA {
@@ -198,7 +199,7 @@ func (t *transaction) sendModifications(m *milter.Modifier) error {
 			return err
 		}
 	}
-	changeInsertOps, addOps := header.Diff(t.origHeaders, t.headers)
+	changeInsertOps, addOps := header.DiffOrRecreate(t.enforceHeaderOrder, t.origHeaders, t.headers)
 	// apply change/insert operations in reverse for the indexes to be correct
 	for i := len(changeInsertOps) - 1; i > -1; i-- {
 		op := changeInsertOps[i]
@@ -284,6 +285,12 @@ func (t *transaction) DelRcptTo(rcptTo string) {
 
 func (t *transaction) Headers() header2.Header {
 	return t.headers
+}
+
+func (t *transaction) HeadersEnforceOrder() {
+	if t.mta.IsSendmail() {
+		t.enforceHeaderOrder = true
+	}
 }
 
 func (t *transaction) Body() io.ReadSeeker {

@@ -19,9 +19,9 @@ DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=example.com;
 .
 DECISION ACCEPT
 HEADER
+Received: placeholder
 X-First1: Test
 X-First2: Test
-Received: placeholder
 From: <>
 To: <to@example.com>
 Subject: test

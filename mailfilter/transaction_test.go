@@ -228,7 +228,7 @@ func TestTransaction_sendModifications(t1 *testing.T) {
 			f.InsertBefore("X-Test", "1")
 			return Accept, nil
 		}, []*wire.Message{
-			mod(wire.ActInsertHeader, []byte("\u0000\u0000\u0000\u0000X-Test\u0000 1\u0000")),
+			mod(wire.ActInsertHeader, []byte("\u0000\u0000\u0000\u0001X-Test\u0000 1\u0000")),
 		}, false},
 		{"prepend-header-err", func(ctx context.Context, trx Trx) (Decision, error) {
 			f := trx.Headers().Fields()
@@ -317,6 +317,32 @@ func TestMTA_IsSendmail(t *testing.T) {
 			}
 			if got := m.IsSendmail(); got != tt.want {
 				t.Errorf("IsSendmail() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_transaction_HeadersEnforceOrder(t1 *testing.T) {
+	type fields struct {
+		mta MTA
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   bool
+	}{
+		{"Postfix", fields{MTA{Version: "Postfix 3.1"}}, false},
+		{"Future Postfix", fields{MTA{Version: "Postfix 8.4.4"}}, false},
+		{"Sendmail", fields{MTA{Version: "8.4.4"}}, true},
+	}
+	for _, tt := range tests {
+		t1.Run(tt.name, func(t1 *testing.T) {
+			t := &transaction{
+				mta: tt.fields.mta,
+			}
+			t.HeadersEnforceOrder()
+			if got := t.enforceHeaderOrder; got != tt.want {
+				t1.Errorf("enforceHeaderOrder = %v, want %v", got, tt.want)
 			}
 		})
 	}

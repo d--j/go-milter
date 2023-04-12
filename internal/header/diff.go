@@ -142,10 +142,7 @@ func Diff(orig *Header, changed *Header) (changeInsertOps []Op, addOps []Op) {
 	for _, diff := range diffs {
 		switch diff.kind {
 		case KindInsert:
-			idx := diff.index + 1
-			if idx > 0 {
-				idx += 1
-			}
+			idx := diff.index + 2
 			if idx-1 >= origLen {
 				addOps = append(addOps, Op{
 					Index: idx,
@@ -179,4 +176,42 @@ func Diff(orig *Header, changed *Header) (changeInsertOps []Op, addOps []Op) {
 	}
 
 	return
+}
+
+// Recreate deletes all headers of orig and adds all headers of changed.
+func Recreate(orig *Header, changed *Header) (changeInsertOps []Op, addOps []Op) {
+	origIndexByKeyCounter := make(map[string]int)
+	origFields := orig.Fields()
+	for i := 0; origFields.Next(); i++ {
+		origIndexByKeyCounter[origFields.CanonicalKey()] += 1
+		changeInsertOps = append(changeInsertOps, Op{
+			Kind:  KindChange,
+			Index: origIndexByKeyCounter[origFields.CanonicalKey()],
+			Name:  origFields.Key(),
+			Value: "",
+		})
+	}
+	changedFields := changed.Fields()
+	i := 0
+	for changedFields.Next() {
+		if changedFields.IsDeleted() {
+			continue
+		}
+		addOps = append(addOps, Op{
+			Index: i,
+			Name:  changedFields.Key(),
+			Value: changedFields.Value(),
+		})
+		i++
+	}
+
+	return
+}
+
+// DiffOrRecreate is a convenience method that either calls Diff or Recreate
+func DiffOrRecreate(recreate bool, orig *Header, changed *Header) (changeInsertOps []Op, addOps []Op) {
+	if recreate {
+		return Recreate(orig, changed)
+	}
+	return Diff(orig, changed)
 }

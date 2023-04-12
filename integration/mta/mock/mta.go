@@ -338,6 +338,8 @@ func (s *Session) Data(r io.Reader) error {
 			}
 			if act.HeaderIndex == 0 {
 				headers = append([]*field{f}, headers...)
+			} else if act.HeaderIndex == 1 { // special case: skip our received line
+				headers = append(headers[:1], append([]*field{f}, headers[1:]...)...)
 			} else if len(headers) < int(act.HeaderIndex)-1 {
 				headers = append(headers, f)
 			} else {
