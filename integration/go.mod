@@ -3,12 +3,12 @@ module github.com/d--j/go-milter/integration
 go 1.18
 
 require (
-	github.com/d--j/go-milter v0.6.5
+	github.com/d--j/go-milter v0.8.2
 	github.com/emersion/go-message v0.16.0
 	github.com/emersion/go-sasl v0.0.0-20200509203442-7bfe0ed36a21
 	github.com/emersion/go-smtp v0.16.0
-	golang.org/x/text v0.7.0
-	golang.org/x/tools v0.1.12
+	golang.org/x/text v0.9.0
+	golang.org/x/tools v0.6.0
 )
 
 require (
