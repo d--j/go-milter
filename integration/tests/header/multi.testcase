@@ -8,9 +8,9 @@ Message-ID: <id@example.com>
 .
 DECISION ACCEPT
 HEADER
+Received: placeholder
 X-First1: Test
 X-First2: Test
-Received: placeholder
 From: <>
 To: <to@example.com>
 X-Before-DATE: Test

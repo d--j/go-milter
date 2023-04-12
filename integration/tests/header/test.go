@@ -12,6 +12,7 @@ import (
 
 func main() {
 	integration.Test(func(ctx context.Context, trx mailfilter.Trx) (mailfilter.Decision, error) {
+		trx.HeadersEnforceOrder()
 		switch trx.MailFrom().Addr {
 		case "add@example.com":
 			trx.Headers().Add("X-ADD1", "Test")

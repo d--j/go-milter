@@ -42,18 +42,19 @@ type Modification struct {
 // After you passed the Trx to your decision function, you can call [Trx.Modifications] and [Trx.Log] to
 // check that your decision function did what was expected of it.
 type Trx struct {
-	mta             mailfilter.MTA
-	connect         mailfilter.Connect
-	helo            mailfilter.Helo
-	mailFrom        addr.MailFrom
-	origMailFrom    addr.MailFrom
-	rcptTos         []*addr.RcptTo
-	origRcptTos     []*addr.RcptTo
-	queueId         string
-	header          *header.Header
-	origHeader      *header.Header
-	body            io.ReadSeeker
-	bodyReplacement io.Reader
+	mta                mailfilter.MTA
+	connect            mailfilter.Connect
+	helo               mailfilter.Helo
+	mailFrom           addr.MailFrom
+	origMailFrom       addr.MailFrom
+	rcptTos            []*addr.RcptTo
+	origRcptTos        []*addr.RcptTo
+	queueId            string
+	header             *header.Header
+	origHeader         *header.Header
+	enforceHeaderOrder bool
+	body               io.ReadSeeker
+	bodyReplacement    io.Reader
 }
 
 func (t *Trx) MTA() *mailfilter.MTA {
@@ -133,6 +134,12 @@ func (t *Trx) Headers() header2.Header {
 	return t.header
 }
 
+func (t *Trx) HeadersEnforceOrder() {
+	if t.mta.IsSendmail() {
+		t.enforceHeaderOrder = true
+	}
+}
+
 func (t *Trx) SetHeaders(headers header2.Header) *Trx {
 	r, err := io.ReadAll(headers.Reader())
 	if err != nil {
@@ -197,7 +204,7 @@ func (t *Trx) Modifications() []Modification {
 	for _, r := range additions {
 		mods = append(mods, Modification{Kind: AddRcptTo, Addr: r.Addr, Args: r.Args})
 	}
-	changeInsertOps, addOps := header.Diff(t.origHeader, t.header)
+	changeInsertOps, addOps := header.DiffOrRecreate(t.enforceHeaderOrder, t.origHeader, t.header)
 	// apply change/insert operations in reverse for the indexes to be correct
 	for i := len(changeInsertOps) - 1; i > -1; i-- {
 		op := changeInsertOps[i]
