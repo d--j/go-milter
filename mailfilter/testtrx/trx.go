@@ -39,7 +39,7 @@ type Modification struct {
 // Trx implements [mailfilter.Trx] for unit tests.
 // Use this struct when you want to test your decision functions.
 // You can use the fluent Set* methods of this struct to build up the transaction you want to test.
-// After you passed the Trx to your decision function, you can call [Trx.Modifications] and [Trx.Log] to
+// After you passed the Trx to your decision function, you can call [Trx.Modifications] to
 // check that your decision function did what was expected of it.
 type Trx struct {
 	mta                mailfilter.MTA
