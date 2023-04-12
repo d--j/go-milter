@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"os"
 	"regexp"
 
 	"github.com/d--j/go-milter"
+	"github.com/d--j/go-milter/internal/body"
 	"github.com/d--j/go-milter/internal/header"
 	"github.com/d--j/go-milter/internal/rcptto"
 	"github.com/d--j/go-milter/mailfilter/addr"
@@ -58,7 +58,7 @@ type transaction struct {
 	headers            *header.Header
 	origHeaders        *header.Header
 	enforceHeaderOrder bool
-	body               *os.File
+	body               *body.Body
 	replacementBody    io.Reader
 	queueId            string
 	hasDecision        bool
@@ -92,7 +92,6 @@ func (t *transaction) cleanup() {
 	t.closeReplacementBody()
 	if t.body != nil {
 		_ = t.body.Close()
-		_ = os.Remove(t.body.Name())
 		t.body = nil
 	}
 }
@@ -249,10 +248,7 @@ func (t *transaction) addHeader(key string, raw []byte) {
 
 func (t *transaction) addBodyChunk(chunk []byte) (err error) {
 	if t.body == nil {
-		t.body, err = os.CreateTemp("", "body-*")
-		if err != nil {
-			return
-		}
+		t.body = body.New(200 * 1024)
 	}
 	_, err = t.body.Write(chunk)
 	return
