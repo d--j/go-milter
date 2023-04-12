@@ -28,8 +28,8 @@ func ExampleNew() {
 				subject, _ := trx.Headers().Subject()
 				if !strings.HasPrefix(subject, "[⚠️EXTERNAL] ") {
 					subject = "[⚠️EXTERNAL] " + subject
+					trx.Headers().SetSubject(subject)
 				}
-				trx.Headers().SetSubject(subject)
 			}
 			return mailfilter.Accept, nil
 		},
