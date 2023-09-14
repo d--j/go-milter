@@ -86,3 +86,51 @@ func TestCustomResponseDefaultResponse(t *testing.T) {
 		})
 	}
 }
+
+func TestResponse_String(t *testing.T) {
+	type fields struct {
+		code wire.Code
+		data []byte
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   string
+	}{
+		{"continue", fields{wire.Code(wire.ActContinue), nil}, "response=continue"},
+		{"accept", fields{wire.Code(wire.ActAccept), nil}, "response=accept"},
+		{"discard", fields{wire.Code(wire.ActDiscard), nil}, "response=discard"},
+		{"reject", fields{wire.Code(wire.ActReject), nil}, "response=reject"},
+		{"temp_fail", fields{wire.Code(wire.ActTempFail), nil}, "response=temp_fail"},
+		{"skip", fields{wire.Code(wire.ActSkip), nil}, "response=skip"},
+		{"progress", fields{wire.Code(wire.ActProgress), nil}, "response=progress"},
+		{"reply_code1", fields{wire.Code(wire.ActReplyCode), []byte("444 test\x00")}, "response=reply_code action=temp_fail code=444 reason=\"444 test\""},
+		{"reply_code2", fields{wire.Code(wire.ActReplyCode), []byte("555 test\x00")}, "response=reply_code action=reject code=555 reason=\"555 test\""},
+		{"reply_code3", fields{wire.Code(wire.ActReplyCode), []byte("continue\x00")}, "response=invalid code=121 data_len=9 data=\"continue\\x00\""},
+		{"add_rcpt1", fields{wire.Code(wire.ActAddRcpt), []byte("<>\x00")}, "response=add_rcpt rcpt=\"<>\""},
+		{"add_rcpt2", fields{wire.Code(wire.ActAddRcptPar), []byte("<>\x00A=B\x00")}, "response=add_rcpt rcpt=\"<>\" args=\"A=B\""},
+		{"del_rcpt", fields{wire.Code(wire.ActDelRcpt), []byte("<>\x00A=B\x00")}, "response=del_rcpt rcpt=\"<>\""},
+		{"quarantine", fields{wire.Code(wire.ActQuarantine), []byte("spam\x00")}, "response=quarantine reason=\"spam\""},
+		{"replace_body", fields{wire.Code(wire.ActReplBody), []byte("1234")}, "response=replace_body len=4"},
+		{"change_from1", fields{wire.Code(wire.ActChangeFrom), []byte("<>\x00")}, "response=change_from from=\"<>\""},
+		{"change_from2", fields{wire.Code(wire.ActChangeFrom), []byte("<>\x00A=B\x00")}, "response=change_from from=\"<>\" args=\"A=B\""},
+		{"add_header", fields{wire.Code(wire.ActAddHeader), []byte("X-Test\x00Test\x00")}, "response=add_header name=\"X-Test\" value=\"Test\""},
+		{"change_header", fields{wire.Code(wire.ActChangeHeader), []byte("\x00\x00\x00\x01X-Test\x00Test\x00")}, "response=change_header name=\"X-Test\" value=\"Test\" index=1"},
+		{"insert_header", fields{wire.Code(wire.ActInsertHeader), []byte("\x00\x00\x00\x01X-Test\x00Test\x00")}, "response=insert_header name=\"X-Test\" value=\"Test\" index=1"},
+		{"garbage", fields{wire.Code(0), []byte("\x00\x00\x00\x00")}, "response=unknown code=0 data_len=4 data=\"\\x00\\x00\\x00\\x00\""},
+		{"garbage-nil", fields{wire.Code(128), nil}, "response=unknown code=128 data_len=0 data=\"\""},
+	}
+	for _, tt_ := range tests {
+		t.Run(tt_.name, func(t *testing.T) {
+			tt := tt_
+			t.Parallel()
+			r := &Response{
+				code: tt.fields.code,
+				data: tt.fields.data,
+			}
+			if got := r.String(); got != tt.want {
+				t.Errorf("String() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
