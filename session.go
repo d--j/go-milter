@@ -211,7 +211,10 @@ func (m *serverSession) Process(msg *wire.Message) (*Response, error) {
 		m.macros.DelStageAndAbove(StageRcpt)
 		from := wire.ReadCString(msg.Data)
 		msg.Data = msg.Data[len(from)+1:]
-		esmtpArgs := wire.ReadCString(msg.Data)
+
+		// the rest of the data are ESMTP arguments, separated by a zero byte.
+		esmtpArgs := strings.Join(wire.DecodeCStrings(msg.Data), " ")
+
 		return m.backend.MailFrom(RemoveAngle(from), esmtpArgs, newModifier(m, true))
 
 	case wire.CodeRcpt:
@@ -221,7 +224,10 @@ func (m *serverSession) Process(msg *wire.Message) (*Response, error) {
 		m.macros.DelStageAndAbove(StageData)
 		to := wire.ReadCString(msg.Data)
 		msg.Data = msg.Data[len(to)+1:]
-		esmtpArgs := wire.ReadCString(msg.Data)
+
+		// the rest of the data are ESMTP arguments, separated by a zero byte.
+		esmtpArgs := strings.Join(wire.DecodeCStrings(msg.Data), " ")
+
 		return m.backend.RcptTo(RemoveAngle(to), esmtpArgs, newModifier(m, true))
 
 	case wire.CodeData:

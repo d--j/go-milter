@@ -354,6 +354,18 @@ func Test_milterSession_Process(t *testing.T) {
 				}
 			},
 		}, &wire.Message{wire.CodeMail, []byte{'<', 'r', '>', 0, 'A', '=', 'B', 0}}, cont, false},
+		{"mail esmtp multi", fields{
+			backend: &processTestMilter{},
+			check: func(t *testing.T, s *serverSession) {
+				p := s.backend.(*processTestMilter)
+				if p.from != "r" {
+					t.Errorf("expected r, got %q", p.from)
+				}
+				if p.fromEsmtp != "A=B C=D" {
+					t.Errorf("expected A=B C=D, got %q", p.fromEsmtp)
+				}
+			},
+		}, &wire.Message{wire.CodeMail, []byte{'<', 'r', '>', 0, 'A', '=', 'B', 0, 'C', '=', 'D', 0}}, cont, false},
 		{"mail err", fields{
 			backend: &processTestMilter{},
 		}, &wire.Message{wire.CodeMail, []byte{}}, nil, true},
@@ -381,6 +393,18 @@ func Test_milterSession_Process(t *testing.T) {
 				}
 			},
 		}, &wire.Message{wire.CodeRcpt, []byte{'<', 'r', '>', 0, 'A', '=', 'B', 0}}, cont, false},
+		{"rcpt esmtp multi", fields{
+			backend: &processTestMilter{},
+			check: func(t *testing.T, s *serverSession) {
+				p := s.backend.(*processTestMilter)
+				if p.rcptTo != "r" {
+					t.Errorf("expected r, got %q", p.rcptTo)
+				}
+				if p.rcptEsmtp != "A=B C=D" {
+					t.Errorf("expected A=B C=D, got %q", p.rcptEsmtp)
+				}
+			},
+		}, &wire.Message{wire.CodeRcpt, []byte{'<', 'r', '>', 0, 'A', '=', 'B', 0, 'C', '=', 'D', 0}}, cont, false},
 		{"rcpt err", fields{
 			backend: &processTestMilter{},
 		}, &wire.Message{wire.CodeRcpt, []byte{}}, nil, true},
