@@ -78,6 +78,10 @@ type MockMilter struct {
 	Chunks [][]byte
 
 	Cmds []string
+
+	ConnectionClosedCommand ClientCommand
+	ConnectionClosedResp    *Response
+	ConnectionClosedErr     error
 }
 
 func (mm *MockMilter) Connect(host string, family string, port uint16, addr string, m *Modifier) (*Response, error) {
@@ -178,6 +182,12 @@ func (mm *MockMilter) Cleanup() {
 	}
 }
 
+func (mm *MockMilter) ConnectionClosed(lastCommand ClientCommand, resp *Response, err error) {
+	mm.ConnectionClosedCommand = lastCommand
+	mm.ConnectionClosedResp = resp
+	mm.ConnectionClosedErr = err
+}
+
 func assertAction(t *testing.T, act *Action, err error, expectCode ActionType) {
 	t.Helper()
 	if err != nil {
@@ -193,6 +203,7 @@ type serverClientWrap struct {
 	client  *Client
 	session *ClientSession
 	local   net.Listener
+	closed  bool
 }
 
 func newServerClient(t *testing.T, macros Macros, serverOptions []Option, clientOptions []Option) serverClientWrap {
@@ -216,8 +227,12 @@ func newServerClient(t *testing.T, macros Macros, serverOptions []Option, client
 }
 
 func (w *serverClientWrap) Cleanup() {
-	w.session.Close()
-	w.server.Close()
+	if !w.closed {
+		w.session.Close()
+		w.server.Close()
+		time.Sleep(time.Millisecond)
+	}
+	w.closed = true
 }
 
 func TestMilterClient_UsualFlow(t *testing.T) {
@@ -352,6 +367,10 @@ func TestMilterClient_UsualFlow(t *testing.T) {
 	if !reflect.DeepEqual(modifyActs, expected) {
 		t.Fatalf("Wrong modify actions: got %+v", modifyActs)
 	}
+	w.Cleanup()
+	if mm.ConnectionClosedCommand != CommandQuit {
+		t.Fatalf("ConnectionClosed() lastCommand got %q, expected %q", mm.ConnectionClosedCommand, CommandQuit)
+	}
 }
 
 func TestMilterClient_AbortFlow(t *testing.T) {
@@ -463,29 +482,39 @@ func TestMilterClient_NoWorking(t *testing.T) {
 	}
 }
 
-func TestMilterClient_NegotiationMismatch(t *testing.T) {
+func TestMilterClient_ClosePremature(t *testing.T) {
 	t.Parallel()
-	mm := MockMilter{}
-	s := NewServer(WithMilter(func() Milter {
+	mm := MockMilter{
+		ConnResp: RespContinue,
+		HeloResp: RespContinue,
+		MailResp: RespContinue,
+		RcptResp: RespContinue,
+		DataResp: RespReject,
+	}
+	macros := NewMacroBag()
+	w := newServerClient(t, macros, []Option{WithMilter(func() Milter {
 		return &mm
-	}), WithActions(OptAddHeader|OptChangeHeader), WithProtocols(OptNoMailFrom))
-	local, err := net.Listen("tcp", "127.0.0.1:0")
+	}), WithActions(OptAddHeader | OptChangeBody | OptAddRcpt | OptRemoveRcpt | OptChangeHeader | OptQuarantine | OptChangeFrom | OptAddRcptWithArgs)},
+		[]Option{WithActions(OptAddHeader | OptChangeBody | OptAddRcpt | OptRemoveRcpt | OptChangeHeader | OptQuarantine | OptChangeFrom | OptAddRcptWithArgs)},
+	)
+	defer w.Cleanup()
+
+	macros.Set(MacroTlsVersion, "very old")
+	act, err := w.session.Conn("host", FamilyInet, 25565, "172.0.0.1")
+	assertAction(t, act, err, ActionContinue)
+	act, err = w.session.Helo("helo_host")
+	assertAction(t, act, err, ActionContinue)
+	act, err = w.session.Mail("from@example.org", "A=B")
+	assertAction(t, act, err, ActionContinue)
+	act, err = w.session.Rcpt("to1@example.org", "A=B")
+	assertAction(t, act, err, ActionContinue)
+	err = w.session.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
-	go s.Serve(local)
-	client := NewClient("tcp", local.Addr().String(), WithActions(OptAddHeader|OptChangeHeader|OptQuarantine), WithProtocols(OptNoEOH))
-	session, err := client.Session(nil)
-	if err == nil {
-		session.Close()
-		t.Fatal("negotiation should fail")
-	}
-
-	client2 := NewClient("tcp", local.Addr().String(), WithActions(OptAddHeader), WithProtocols(OptNoMailFrom))
-	session2, err := client2.Session(nil)
-	if err == nil {
-		session2.Close()
-		t.Fatal("negotiation should fail")
+	w.Cleanup()
+	if mm.ConnectionClosedCommand != CommandQuit {
+		t.Fatalf("ConnectionClosed() lastCommand got %q, expected %q", mm.ConnectionClosedCommand, CommandQuit)
 	}
 }
 

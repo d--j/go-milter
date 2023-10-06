@@ -87,6 +87,10 @@ func (l *LogMilter) Cleanup() {
 	l.macroValues = nil
 }
 
+func (l *LogMilter) ConnectionClosed(lastCommand milter.ClientCommand, resp *milter.Response, err error) {
+	l.log("CLOSED Last received command = %s, our response = %v, err = %v", lastCommand, resp, err)
+}
+
 func (l *LogMilter) outputChangedMacros(m *milter.Modifier) {
 	if l.macroValues == nil {
 		l.macroValues = make(map[milter.MacroName]string)

@@ -2,10 +2,10 @@ package milter
 
 import (
 	"bytes"
-	"testing"
-
 	"github.com/d--j/go-milter/internal/wire"
 	"github.com/emersion/go-message/textproto"
+	"net"
+	"testing"
 )
 
 func TestNoOpMilter(t *testing.T) {
@@ -111,5 +111,44 @@ func TestServer_NoOpMilter(t *testing.T) {
 	assertEnd(w.session.End())
 	if err := w.server.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestNewServer(t *testing.T) {
+	dummyMilter := func(version uint32, action OptAction, protocol OptProtocol, maxData DataSize) Milter {
+		return &NoOpMilter{}
+	}
+	t.Parallel()
+	tests := []struct {
+		name      string
+		opts      []Option
+		check     func(s *Server) bool
+		wantPanic bool
+	}{
+		{"milter missing", []Option{WithMaximumVersion(6)}, nil, true},
+		{"with invalid version 1", []Option{WithDynamicMilter(dummyMilter), WithMaximumVersion(1)}, nil, true},
+		{"with invalid version 10", []Option{WithDynamicMilter(dummyMilter), WithMaximumVersion(10)}, nil, true},
+		{"with dialer", []Option{WithDynamicMilter(dummyMilter), WithDialer(&net.Dialer{})}, nil, true},
+		{"with offered max data", []Option{WithDynamicMilter(dummyMilter), WithOfferedMaxData(123)}, nil, true},
+		{"with macros", []Option{WithDynamicMilter(dummyMilter), WithMacroRequest(StageConnect, []MacroName{MacroClientName})}, func(s *Server) bool {
+			return (s.options.actions & OptSetMacros) != 0
+		}, false},
+	}
+	for _, tt_ := range tests {
+		t.Run(tt_.name, func(t *testing.T) {
+			tt := tt_
+			t.Parallel()
+			defer func() { _ = recover() }()
+			got := NewServer(tt.opts...)
+			if tt.check != nil {
+				if !tt.check(got) {
+					t.Errorf("check failed, got %+v", got)
+				}
+			}
+			if tt.wantPanic {
+				t.Errorf("did not panic")
+			}
+
+		})
 	}
 }

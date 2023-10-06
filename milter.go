@@ -62,13 +62,15 @@ const (
 	OptHeaderLeadingSpace OptProtocol = 1 << 20
 )
 
+//goland:noinspection GoUnusedConst
 const (
 	// OptNoReplies combines all protocol flags that define that your milter does not send a reply
 	// to the MTA. Use this if your [Milter] only decides at the [Milter.EndOfMessage] handler if the
 	// email is acceptable or needs to be rejected.
-	OptNoReplies OptProtocol = OptNoHeaderReply | OptNoConnReply | OptNoHeloReply | OptNoMailReply | OptNoRcptReply | OptNoDataReply | OptNoUnknownReply | OptNoEOHReply | OptNoBodyReply
+	OptNoReplies = OptNoHeaderReply | OptNoConnReply | OptNoHeloReply | OptNoMailReply | OptNoRcptReply | OptNoDataReply | OptNoUnknownReply | OptNoEOHReply | OptNoBodyReply
 )
 
+//goland:noinspection GoUnusedConst
 const (
 	optMds256K  uint32 = 1 << 28                       // SMFIP_MDS_256K
 	optMds1M    uint32 = 1 << 29                       // SMFIP_MDS_1M

@@ -24,11 +24,49 @@ type serverSession struct {
 	conn        net.Conn
 	macros      *macrosStages
 	backend     Milter
+	lastCommand ClientCommand
 }
 
 // readPacket reads incoming milter packet
 func (m *serverSession) readPacket() (*wire.Message, error) {
-	return wire.ReadPacket(m.conn, 0)
+	msg, err := wire.ReadPacket(m.conn, 0)
+	if msg != nil {
+		switch msg.Code {
+		case wire.CodeOptNeg:
+			m.lastCommand = CommandNegotiate
+		case wire.CodeConn:
+			m.lastCommand = CommandConnect
+		case wire.CodeHelo:
+			m.lastCommand = CommandHelo
+		case wire.CodeMail:
+			m.lastCommand = CommandMail
+		case wire.CodeRcpt:
+			m.lastCommand = CommandRcpt
+		case wire.CodeData:
+			m.lastCommand = CommandData
+		case wire.CodeHeader:
+			m.lastCommand = CommandHeader
+		case wire.CodeEOH:
+			m.lastCommand = CommandEOH
+		case wire.CodeBody:
+			m.lastCommand = CommandBodyChunk
+		case wire.CodeEOB:
+			m.lastCommand = CommandEOM
+		case wire.CodeUnknown:
+			m.lastCommand = CommandUnknown
+		case wire.CodeMacro:
+			m.lastCommand = CommandMacro
+		case wire.CodeAbort:
+			m.lastCommand = CommandAbort
+		case wire.CodeQuitNewConn:
+			m.lastCommand = CommandQuitNewConn
+		case wire.CodeQuit:
+			m.lastCommand = CommandQuit
+		default:
+			m.lastCommand = ClientCommand(fmt.Sprintf("unknown-command-%c", msg.Code))
+		}
+	}
+	return msg, err
 }
 
 // writePacket sends a milter response packet to socket stream
@@ -350,16 +388,21 @@ func (m *serverSession) HandleMilterCommands() {
 		if err != io.EOF {
 			LogWarning("Error reading milter command: %v", err)
 		}
+		// no backend yet
+		// m.backend.ConnectionClosed(m.lastCommand, nil, err)
 		return
 	}
 	resp, err := m.negotiate(msg, m.server.options.maxVersion, m.server.options.actions, m.server.options.protocol, m.server.options.negotiationCallback, m.server.options.macrosByStage, 0)
 	if err != nil {
 		LogWarning("Error negotiating: %v", err)
+		// no backend yet
+		// m.backend.ConnectionClosed(m.lastCommand, resp, err)
 		return
 	}
 	m.backend = m.newBackend()
 	if err = m.writePacket(resp.Response()); err != nil {
 		LogWarning("Error writing packet: %v", err)
+		m.backend.ConnectionClosed(m.lastCommand, resp, err)
 		return
 	}
 
@@ -370,17 +413,21 @@ func (m *serverSession) HandleMilterCommands() {
 			if err != io.EOF {
 				LogWarning("Error reading milter command: %v", err)
 			}
+			m.backend.ConnectionClosed(m.lastCommand, nil, err)
 			return
 		}
 
 		resp, err := m.Process(msg)
 		if err != nil {
-			if err != errCloseSession {
+			if !errors.Is(err, errCloseSession) {
 				// log error condition
 				LogWarning("Error performing milter command: %v", err)
 				if resp != nil && !m.skipResponse(msg.Code) {
 					_ = m.writePacket(resp.Response())
 				}
+				m.backend.ConnectionClosed(m.lastCommand, resp, err)
+			} else {
+				m.backend.ConnectionClosed(m.lastCommand, resp, nil)
 			}
 			return
 		}
@@ -393,6 +440,7 @@ func (m *serverSession) HandleMilterCommands() {
 		// send back response message
 		if err = m.writePacket(resp.Response()); err != nil {
 			LogWarning("Error writing packet: %v", err)
+			m.backend.ConnectionClosed(m.lastCommand, resp, err)
 			return
 		}
 
