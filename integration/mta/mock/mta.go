@@ -193,7 +193,7 @@ func toMailOptions(arg string) *smtp.MailOptions {
 			opts.Body = smtp.BodyType(a[5:])
 			set = true
 		} else if strings.HasPrefix(a, "SIZE=") {
-			opts.Size, err = strconv.Atoi(a[5:])
+			opts.Size, err = strconv.ParseInt(a[5:], 10, 64)
 			if err != nil {
 				panic(err)
 			}
@@ -217,7 +217,7 @@ func (s *Session) Mail(from string, opts *smtp.MailOptions) error {
 	return s.handleMilter(s.filter.Mail(s.MailFrom, s.MailFromArgs))
 }
 
-func (s *Session) Rcpt(to string) error {
+func (s *Session) Rcpt(to string, _ *smtp.RcptOptions) error {
 	log.Printf("[%s] Rcpt to: %s", s.queueId, to)
 	if s.discarded {
 		return nil
@@ -483,7 +483,7 @@ queue:
 			continue
 		}
 		for _, rcpt := range msg.Recipients {
-			if err := c.Rcpt(rcpt.Addr); err != nil {
+			if err := c.Rcpt(rcpt.Addr, nil); err != nil {
 				log.Print(err)
 				continue queue
 			}
