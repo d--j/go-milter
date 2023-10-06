@@ -12,6 +12,28 @@ const MaxServerProtocolVersion uint32 = 6
 // ErrServerClosed is returned by the [Server]'s [Server.Serve] method after a call to [Server.Close].
 var ErrServerClosed = errors.New("milter: server closed")
 
+// ClientCommand represents a command that a milter client (MTA) sent to the milter server (filter program).
+type ClientCommand string
+
+const (
+	CommandNone        ClientCommand = "<NONE>"         // The client did not send any commands
+	CommandNegotiate                 = "NEGOTIATE"      // The client sent a SMFIC_OPTNEG command
+	CommandConnect                   = "CONNECT"        // The client sent a SMFIC_CONNECT command
+	CommandHelo                      = "HELO"           // The client sent a SMFIC_HELO command
+	CommandMail                      = "MAIL"           // The client sent a SMFIC_MAIL command
+	CommandRcpt                      = "RCPT"           // The client sent a SMFIC_RCPT command
+	CommandData                      = "DATA"           // The client sent a SMFIC_DATA command
+	CommandHeader                    = "HEADER"         // The client sent a SMFIC_HEADER command
+	CommandEOH                       = "END-OF-HEADER"  // The client sent a SMFIC_EOH command
+	CommandBodyChunk                 = "BODY-CHUNK"     // The client sent a SMFIC_BODY command
+	CommandEOM                       = "END-OF-MESSAGE" // The client sent a SMFIC_BODYEOB command
+	CommandUnknown                   = "UNKNOWN"        // The client sent a SMFIC_UNKNOWN command
+	CommandMacro                     = "MACRO"          // The client sent a SMFIC_MACRO command
+	CommandAbort                     = "ABORT"          // The client sent a SMFIC_ABORT command
+	CommandQuit                      = "QUIT"           // The client sent a SMFIC_QUIT command
+	CommandQuitNewConn               = "QUIT-NEW-CONN"  // The client sent a SMFIC_QUIT_NC command
+)
+
 // Milter is an interface for milter callback handlers.
 type Milter interface {
 	// Connect is called to provide SMTP connection data for incoming message.
@@ -89,6 +111,20 @@ type Milter interface {
 	// E.g. because the MTA closed the connection, one SMTP message was successful or there was an error.
 	// May be called more than once for a single [Milter].
 	Cleanup()
+
+	// ConnectionClosed gets called after the milter connection was closed (by the client or server).
+	// It does not get called when client issues a SMFIC_QUIT_NC command or when one connection gets used for multiple messages.
+	// You should not use this function to clean up resources. Clients can use a single milter connection to process
+	// multiple SMTP messages and/or SMTP connections. Every message gets a new [Milter] backend but only the last
+	// [Milter] backend's ConnectionClosed function gets called (when the connection finally gets closed).
+	//
+	// The parameter lastCommand is the last command that the client passed to the [Milter].
+	//
+	// The optional resp parameter is our response that we sent (err = nil) or would have sent (err != nil, if we already had one).
+	//
+	// The optional err parameter is the error that we might have gotten (the reason why the connection closed).
+	// It might be nil when we closed the connection.
+	ConnectionClosed(lastCommand ClientCommand, resp *Response, err error)
 }
 
 // NoOpMilter is a dummy [Milter] implementation that does nothing.
@@ -96,51 +132,66 @@ type NoOpMilter struct{}
 
 var _ Milter = NoOpMilter{}
 
+//goland:noinspection GoUnusedParameter
 func (NoOpMilter) Connect(host string, family string, port uint16, addr string, m *Modifier) (*Response, error) {
 	return RespContinue, nil
 }
 
+//goland:noinspection GoUnusedParameter
 func (NoOpMilter) Helo(name string, m *Modifier) (*Response, error) {
 	return RespContinue, nil
 }
 
+//goland:noinspection GoUnusedParameter
 func (NoOpMilter) MailFrom(from string, esmtpArgs string, m *Modifier) (*Response, error) {
 	return RespContinue, nil
 }
 
+//goland:noinspection GoUnusedParameter
 func (NoOpMilter) RcptTo(rcptTo string, esmtpArgs string, m *Modifier) (*Response, error) {
 	return RespContinue, nil
 }
 
+//goland:noinspection GoUnusedParameter
 func (NoOpMilter) Data(m *Modifier) (*Response, error) {
 	return RespContinue, nil
 }
 
+//goland:noinspection GoUnusedParameter
 func (NoOpMilter) Header(name string, value string, m *Modifier) (*Response, error) {
 	return RespContinue, nil
 }
 
+//goland:noinspection GoUnusedParameter
 func (NoOpMilter) Headers(m *Modifier) (*Response, error) {
 	return RespContinue, nil
 }
 
+//goland:noinspection GoUnusedParameter
 func (NoOpMilter) BodyChunk(chunk []byte, m *Modifier) (*Response, error) {
 	return RespContinue, nil
 }
 
+//goland:noinspection GoUnusedParameter
 func (NoOpMilter) EndOfMessage(m *Modifier) (*Response, error) {
 	return RespAccept, nil
 }
 
+//goland:noinspection GoUnusedParameter
 func (NoOpMilter) Abort(_ *Modifier) error {
 	return nil
 }
 
+//goland:noinspection GoUnusedParameter
 func (NoOpMilter) Unknown(cmd string, m *Modifier) (*Response, error) {
 	return RespContinue, nil
 }
 
 func (NoOpMilter) Cleanup() {
+}
+
+//goland:noinspection GoUnusedParameter
+func (m NoOpMilter) ConnectionClosed(lastCommand ClientCommand, resp *Response, err error) {
 }
 
 // Server is a milter server.
@@ -212,12 +263,13 @@ func (s *Server) Serve(ln net.Listener) error {
 		}
 
 		session := serverSession{
-			server:   s,
-			version:  s.options.maxVersion,
-			actions:  s.options.actions,
-			protocol: s.options.protocol,
-			conn:     conn,
-			macros:   newMacroStages(),
+			server:      s,
+			version:     s.options.maxVersion,
+			actions:     s.options.actions,
+			protocol:    s.options.protocol,
+			conn:        conn,
+			macros:      newMacroStages(),
+			lastCommand: CommandNone,
 		}
 		go session.HandleMilterCommands()
 	}

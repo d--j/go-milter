@@ -11,24 +11,27 @@ import (
 )
 
 type processTestMilter struct {
-	cleanupCalled     int
-	host              string
-	family            string
-	port              uint16
-	addr              string
-	name              string
-	from              string
-	fromEsmtp         string
-	rcptTo            string
-	rcptEsmtp         string
-	dataCalled        bool
-	hdrName, hdrValue string
-	headers           textproto.MIMEHeader
-	headersCalled     bool
-	chunk             []byte
-	eomCalled         bool
-	abortCalled       bool
-	cmd               string
+	cleanupCalled        int
+	host                 string
+	family               string
+	port                 uint16
+	addr                 string
+	name                 string
+	from                 string
+	fromEsmtp            string
+	rcptTo               string
+	rcptEsmtp            string
+	dataCalled           bool
+	hdrName, hdrValue    string
+	headers              textproto.MIMEHeader
+	headersCalled        bool
+	chunk                []byte
+	eomCalled            bool
+	abortCalled          bool
+	cmd                  string
+	connectionClosedCmd  ClientCommand
+	connectionClosedResp *Response
+	connectionClosedErr  error
 }
 
 func (p *processTestMilter) Connect(host string, family string, port uint16, addr string, m *Modifier) (*Response, error) {
@@ -94,6 +97,12 @@ func (p *processTestMilter) Unknown(cmd string, m *Modifier) (*Response, error) 
 
 func (p *processTestMilter) Cleanup() {
 	p.cleanupCalled++
+}
+
+func (p *processTestMilter) ConnectionClosed(lastCommand ClientCommand, resp *Response, err error) {
+	p.connectionClosedCmd = lastCommand
+	p.connectionClosedResp = resp
+	p.connectionClosedErr = err
 }
 
 var _ Milter = &processTestMilter{}

@@ -179,7 +179,7 @@ func (t *TestCase) Send(steps []*integration.InputStep, port uint16) (uint16, st
 				return smtpErr(err, integration.StepFrom)
 			}
 		case "TO":
-			if err := client.Rcpt(step.Addr); err != nil {
+			if err := client.Rcpt(step.Addr, nil); err != nil {
 				return smtpErr(err, integration.StepTo)
 			}
 		case "RESET":
