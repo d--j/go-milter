@@ -93,6 +93,8 @@ func TestCrLfToLfTransformer(t *testing.T) {
 		{[]string{"\r", "\n"}, "\n"},
 		{[]string{"\r\r", "\n"}, "\n\n"},
 		{[]string{stuffing + "123456\r", "\n"}, stuffing + "123456\n"},
+		// regression https://github.com/d--j/go-milter/pull/20
+		{[]string{"aaaaaaaaaaaaaaaaaaaaaaaa\r\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\r\nbbbbbbb"}, "aaaaaaaaaaaaaaaaaaaaaaaa\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nbbbbbbb"},
 	})
 }
 

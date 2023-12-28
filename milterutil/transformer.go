@@ -22,7 +22,6 @@ func (t *CrLfToLfTransformer) Transform(dst, src []byte, atEOF bool) (nDst, nSrc
 		if c == lf {
 			if t.prevCR {
 				nSrc++
-				dst[nDst-1] = lf
 				t.prevCR = false
 				continue
 			}
