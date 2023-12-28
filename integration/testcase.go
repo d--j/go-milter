@@ -50,6 +50,24 @@ func ToAddrArg(addr string, options *smtp.MailOptions) *AddrArg {
 	return &aa
 }
 
+func ToAddrArgRcpt(addr string, options *smtp.RcptOptions) *AddrArg {
+	var aa AddrArg
+	aa.Addr = addr
+	if options == nil {
+		return &aa
+	}
+	var args []string
+	if len(options.Notify) > 0 {
+		var list []string
+		for _, s := range options.Notify {
+			list = append(list, string(s))
+		}
+		args = append(args, fmt.Sprintf("NOTIFY=%s", strings.Join(list, ",")))
+	}
+	aa.Arg = strings.Join(args, " ")
+	return &aa
+}
+
 type InputStep struct {
 	What      string
 	Addr, Arg string
