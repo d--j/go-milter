@@ -178,7 +178,6 @@ func parseMailOptions(opts *smtp.MailOptions) string {
 }
 
 func toMailOptions(arg string) *smtp.MailOptions {
-	var err error
 	opts := smtp.MailOptions{}
 	args := strings.Split(arg, " ")
 	set := false
@@ -193,15 +192,46 @@ func toMailOptions(arg string) *smtp.MailOptions {
 			opts.Body = smtp.BodyType(a[5:])
 			set = true
 		} else if strings.HasPrefix(a, "SIZE=") {
-			opts.Size, err = strconv.Atoi(a[5:])
+			size, err := strconv.Atoi(a[5:])
 			if err != nil {
 				panic(err)
 			}
+			opts.Size = int64(size)
 			set = true
 		} else if strings.HasPrefix(a, "AUTH=") {
 			auth := a[6 : len(a)-1]
 			opts.Auth = &auth
 			set = true
+		}
+	}
+	if set {
+		return &opts
+	}
+	return nil
+}
+
+func toRcptOptions(arg string) *smtp.RcptOptions {
+	opts := smtp.RcptOptions{}
+	args := strings.Split(arg, " ")
+	set := false
+	for _, a := range args {
+		if strings.HasPrefix(a, "NOTIFY=") {
+			foundNever := false
+			for _, n := range strings.Split(a[7:len(a)-1], ",") {
+				switch n {
+				case string(smtp.DSNNotifyNever):
+					opts.Notify = []smtp.DSNNotify{smtp.DSNNotifyNever}
+					foundNever = true
+					set = true
+				case string(smtp.DSNNotifyDelayed), string(smtp.DSNNotifyFailure), string(smtp.DSNNotifySuccess):
+					if !foundNever {
+						opts.Notify = append(opts.Notify, smtp.DSNNotify(n))
+						set = true
+					}
+				}
+			}
+		} else if strings.HasPrefix(a, "ORCPT=") {
+			panic("we do not support this argument")
 		}
 	}
 	if set {
@@ -217,7 +247,7 @@ func (s *Session) Mail(from string, opts *smtp.MailOptions) error {
 	return s.handleMilter(s.filter.Mail(s.MailFrom, s.MailFromArgs))
 }
 
-func (s *Session) Rcpt(to string) error {
+func (s *Session) Rcpt(to string, opts *smtp.RcptOptions) error {
 	log.Printf("[%s] Rcpt to: %s", s.queueId, to)
 	if s.discarded {
 		return nil
@@ -483,7 +513,7 @@ queue:
 			continue
 		}
 		for _, rcpt := range msg.Recipients {
-			if err := c.Rcpt(rcpt.Addr); err != nil {
+			if err := c.Rcpt(rcpt.Addr, toRcptOptions(rcpt.Args)); err != nil {
 				log.Print(err)
 				continue queue
 			}

@@ -53,8 +53,8 @@ func (rs *ReceiverSession) Mail(from string, opts *smtp.MailOptions) error {
 	return nil
 }
 
-func (rs *ReceiverSession) Rcpt(to string) error {
-	rs.Output.To = append(rs.Output.To, integration.ToAddrArg(to, nil))
+func (rs *ReceiverSession) Rcpt(to string, opts *smtp.RcptOptions) error {
+	rs.Output.To = append(rs.Output.To, integration.ToAddrArgRcpt(to, opts))
 	return nil
 }
 
