@@ -13,7 +13,7 @@ require (
 
 require (
 	github.com/emersion/go-textwrapper v0.0.0-20200911093747-65d896831594 // indirect
-	golang.org/x/net v0.19.0 // indirect
+	golang.org/x/net v0.23.0 // indirect
 )
 
 replace github.com/d--j/go-milter => ../
