@@ -131,6 +131,28 @@ func TestBody(t *testing.T) {
 		_, _ = b.Write([]byte("test"))
 		t.Errorf("did not panic")
 	})
+	t.Run("error on Seek", func(t *testing.T) {
+		b := getBody(10, []byte("test"))
+		_, err := b.Seek(-1, io.SeekStart)
+		if err == nil {
+			t.Errorf("did not error on seek")
+		}
+	})
+	t.Run("error on switchToReading", func(t *testing.T) {
+		b := getBody(2, []byte("test"))
+		_ = b.file.Close()
+		_, err := b.Seek(0, io.SeekStart)
+		if err == nil {
+			t.Errorf("did not error on Seek")
+		}
+		b = getBody(2, []byte("test"))
+		_ = b.file.Close()
+		var buf [10]byte
+		_, err = b.Read(buf[:])
+		if err == nil {
+			t.Errorf("did not error on Read")
+		}
+	})
 	t.Run("temp file fail", func(t *testing.T) {
 		tmpdir := os.Getenv("TMPDIR")
 		tmp := os.Getenv("TMP")

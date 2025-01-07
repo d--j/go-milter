@@ -6,3 +6,8 @@ integration:
 	go run github.com/d--j/go-milter/integration/runner -filter '.*' -mtaFilter '.*' ./tests
 
 .PHONY: integration
+
+integration-only-mock:
+	cd integration && go run github.com/d--j/go-milter/integration/runner -filter '.*' -mtaFilter 'mock' ./tests
+
+.PHONY: only-mock

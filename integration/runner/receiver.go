@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/d--j/go-milter/integration"
+	"github.com/emersion/go-sasl"
 	"github.com/emersion/go-smtp"
 )
 
@@ -41,8 +42,12 @@ func (rs *ReceiverSession) Logout() error {
 	return nil
 }
 
-func (rs *ReceiverSession) AuthPlain(_, _ string) error {
-	return errors.New("no auth")
+func (rs *ReceiverSession) AuthMechanisms() []string {
+	return []string{}
+}
+
+func (rs *ReceiverSession) Auth(_ string) (sasl.Server, error) {
+	return nil, errors.New("no auth")
 }
 
 func (rs *ReceiverSession) Mail(from string, opts *smtp.MailOptions) error {

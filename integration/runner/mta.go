@@ -82,6 +82,7 @@ func (m *MTA) Start() error {
 			if err != nil {
 				return err
 			}
+			//goland:noinspection GoDeferInLoop
 			defer func(d time.Duration) { time.Sleep(d) }(d)
 			break
 		}
