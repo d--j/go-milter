@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -31,7 +32,7 @@ func WaitForPort(ctx context.Context, port uint16) error {
 		time.Sleep(250 * time.Millisecond)
 		conn, err := net.Dial("tcp", fmt.Sprintf(":%d", port))
 		if err == nil {
-			conn.Close()
+			_ = conn.Close()
 			return nil
 		}
 	}
@@ -42,7 +43,8 @@ func IsExpectedExitErr(err error) bool {
 	if err == nil {
 		return true
 	}
-	if e, ok := err.(*exec.ExitError); ok {
+	var e *exec.ExitError
+	if errors.As(err, &e) {
 		if e.Success() || e.ExitCode() == integration.ExitSkip {
 			return true
 		}

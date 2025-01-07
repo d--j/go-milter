@@ -196,13 +196,15 @@ func ParseTestCase(filename string) (*TestCase, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func(f *os.File) {
+		_ = f.Close()
+	}(f)
 	r := textproto.NewReader(bufio.NewReader(f))
 	steps := 0
 	var inputs []*InputStep
 	var decision *Decision
 	var output *Output
-	for true {
+	for {
 		line, err := r.ReadLine()
 		if err == io.EOF {
 			if line != "" {
@@ -642,6 +644,7 @@ func addrEqual(expected, got *AddrArg) bool {
 	if (expected == nil) != (got == nil) {
 		return false
 	}
+	//goland:noinspection GoDfaNilDereference
 	if expected.Addr != got.Addr {
 		return false
 	}
@@ -679,7 +682,7 @@ func DiffOutput(expected, got *Output) (string, bool) {
 	if expected != nil && got == nil {
 		return "got nil output", false
 	}
-	if expected == nil && got != nil {
+	if expected == nil {
 		return "expected nil", false
 	}
 	var b strings.Builder
@@ -762,7 +765,7 @@ func CompareOutputSendmail(expected, got *Output) bool {
 	if expected != nil && got == nil {
 		return false
 	}
-	if expected == nil && got != nil {
+	if expected == nil {
 		return false
 	}
 	if expected.From != nil && !addrEqual(expected.From, got.From) {

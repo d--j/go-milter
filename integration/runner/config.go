@@ -52,9 +52,9 @@ func ParseConfig() *Config {
 	mtaFilter := ""
 	flag.StringVar(&mtaFilter, "mtaFilter", "", "regexp `pattern` to filter MTAs")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "Usage of %s:\n", os.Args[0])
+		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "Usage of %s:\n", os.Args[0])
 		flag.PrintDefaults()
-		fmt.Fprintf(flag.CommandLine.Output(), "  test-dir...\n    \tone ore more directories containing test filters and testcases\n")
+		_, _ = fmt.Fprintf(flag.CommandLine.Output(), "  test-dir...\n    \tone ore more directories containing test filters and testcases\n")
 	}
 	flag.Parse()
 	if filter == "" {
@@ -228,7 +228,8 @@ func expandTestDirs(in []string) (dirs []string, err error) {
 		}
 		pkg, err := ctxt.ImportDir(candidate, 0)
 		if err != nil {
-			if _, ok := err.(*build.NoGoError); ok {
+			var noGoError *build.NoGoError
+			if errors.As(err, &noGoError) {
 				err = filepath.WalkDir(candidate, func(path string, d fs.DirEntry, err error) error {
 					if err == nil && candidate != path && d.IsDir() {
 						in = append(in, path)
@@ -241,8 +242,6 @@ func expandTestDirs(in []string) (dirs []string, err error) {
 				if err != nil {
 					return nil, err
 				}
-			} else {
-				return nil, err
 			}
 		} else {
 			if !pkg.IsCommand() {

@@ -10,12 +10,13 @@ import (
 	"log"
 	"math/rand"
 	"net"
-	textproto2 "net/textproto"
+	"net/textproto"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/d--j/go-milter"
+	"github.com/emersion/go-sasl"
 	"github.com/emersion/go-smtp"
 )
 
@@ -128,21 +129,27 @@ type Session struct {
 	QuarantineReason       *string
 }
 
-func (s *Session) AuthPlain(username, password string) error {
-	found := false
-	if username == "user1@example.com" && password == "password1" {
-		found = true
-	}
-	if username == "user2@example.com" && password == "password2" {
-		found = true
-	}
-	if found {
-		s.macros.Set(milter.MacroAuthType, "plain")
-		s.macros.Set(milter.MacroAuthAuthen, username)
-		log.Printf("[%s] Authenticated as: %s", s.queueId, username)
-		return nil
-	}
-	return errors.New("invalid username or password")
+func (s *Session) AuthMechanisms() []string {
+	return []string{sasl.Plain}
+}
+
+func (s *Session) Auth(_ string) (sasl.Server, error) {
+	return sasl.NewPlainServer(func(identity, username, password string) error {
+		found := false
+		if username == "user1@example.com" && password == "password1" {
+			found = true
+		}
+		if username == "user2@example.com" && password == "password2" {
+			found = true
+		}
+		if found {
+			s.macros.Set(milter.MacroAuthType, "plain")
+			s.macros.Set(milter.MacroAuthAuthen, username)
+			log.Printf("[%s] Authenticated as: %s", s.queueId, username)
+			return nil
+		}
+		return errors.New("invalid username or password")
+	}), nil
 }
 
 func (s *Session) handleMilter(resp *milter.Action, err error) error {
@@ -247,7 +254,7 @@ func (s *Session) Mail(from string, opts *smtp.MailOptions) error {
 	return s.handleMilter(s.filter.Mail(s.MailFrom, s.MailFromArgs))
 }
 
-func (s *Session) Rcpt(to string, opts *smtp.RcptOptions) error {
+func (s *Session) Rcpt(to string, _ *smtp.RcptOptions) error {
 	log.Printf("[%s] Rcpt to: %s", s.queueId, to)
 	if s.discarded {
 		return nil
@@ -350,7 +357,7 @@ func (s *Session) Data(r io.Reader) error {
 			}
 			raw := fmt.Sprintf("%s:%s%s\r\n", act.HeaderName, maybeSpace, act.HeaderValue)
 			headers = append(headers, &field{
-				key:       textproto2.CanonicalMIMEHeaderKey(act.HeaderName),
+				key:       textproto.CanonicalMIMEHeaderKey(act.HeaderName),
 				changeIdx: -1,
 				raw:       []byte(raw),
 			})
@@ -362,7 +369,7 @@ func (s *Session) Data(r io.Reader) error {
 			}
 			raw := fmt.Sprintf("%s:%s%s\r\n", act.HeaderName, maybeSpace, act.HeaderValue)
 			f := &field{
-				key:       textproto2.CanonicalMIMEHeaderKey(act.HeaderName),
+				key:       textproto.CanonicalMIMEHeaderKey(act.HeaderName),
 				changeIdx: -1,
 				raw:       []byte(raw),
 			}
@@ -383,7 +390,7 @@ func (s *Session) Data(r io.Reader) error {
 				maybeSpace = " "
 			}
 			raw := fmt.Sprintf("%s:%s%s\r\n", act.HeaderName, maybeSpace, act.HeaderValue)
-			key := textproto2.CanonicalMIMEHeaderKey(act.HeaderName)
+			key := textproto.CanonicalMIMEHeaderKey(act.HeaderName)
 			for _, f := range headers {
 				if f.key == key && f.changeIdx == int(act.HeaderIndex) {
 					if act.HeaderValue == "" {
@@ -470,7 +477,7 @@ func splitHeaders(headerBytes []byte) (fields []*field) {
 					log.Print(s)
 					panic("key not found")
 				}
-				key := textproto2.CanonicalMIMEHeaderKey(strings.TrimSpace(s[0][:keyIdx]))
+				key := textproto.CanonicalMIMEHeaderKey(strings.TrimSpace(s[0][:keyIdx]))
 				keyCounter[key] += 1
 				fields = append(fields, &field{
 					key:       key,

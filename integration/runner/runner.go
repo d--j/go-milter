@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+
 	"github.com/d--j/go-milter/integration"
 )
 
@@ -44,7 +46,7 @@ func (r *Runner) Run() bool {
 		prevDir = dir
 		LevelTwoLogger.Print(dir.Path)
 		if err := dir.Start(); err != nil {
-			if err == ErrTestSkipped {
+			if errors.Is(err, ErrTestSkipped) {
 				for _, t := range dir.Tests {
 					i++
 					LevelThreeLogger.Printf("%03d/%03d %s", i+1, tests, t.Filename)
@@ -99,6 +101,8 @@ func (r *Runner) Run() bool {
 			numSkipped++
 		case TestFailed:
 			numFailed++
+		case TestReady:
+			panic("test state is ready. This should never happen")
 		}
 	}
 	LevelOneLogger.Printf("%d tests done: %d OK %d skipped %d failed", len(r.config.Tests), numOk, numSkipped, numFailed)

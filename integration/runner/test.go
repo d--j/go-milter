@@ -70,7 +70,8 @@ func (t *TestDir) Start() error {
 	err = t.startErr
 	t.m.Unlock()
 	if err != nil {
-		if e, ok := err.(*exec.ExitError); ok {
+		var e *exec.ExitError
+		if errors.As(err, &e) {
 			if e.ExitCode() == integration.ExitSkip {
 				return ErrTestSkipped
 			}
@@ -89,7 +90,7 @@ func (t *TestDir) Start() error {
 func (t *TestDir) Stop() {
 	t.once.Do(func() {
 		if t.cmd != nil && t.cmd.Process != nil {
-			t.cmd.Process.Signal(syscall.SIGTERM)
+			_ = t.cmd.Process.Signal(syscall.SIGTERM)
 			t.cmd = nil
 			t.wg.Wait()
 		}
@@ -149,21 +150,41 @@ func (l *logWriter) Write(p []byte) (n int, err error) {
 }
 
 func (t *TestCase) Send(steps []*integration.InputStep, port uint16) (uint16, string, integration.DecisionStep, error) {
-	client, err := smtp.Dial(fmt.Sprintf(":%d", port))
-	if err != nil {
-		return 0, "", integration.StepAny, err
-	}
-	defer client.Close()
-	client.DebugWriter = &logWriter{t: t}
+	dbgLog := &logWriter{t: t}
+	var err error
+	var client *smtp.Client
+	var heloArg = ""
+	defer func() {
+		if client != nil {
+			_ = client.Close()
+		}
+	}()
 	var dataWriter io.WriteCloser
 	for _, step := range steps {
 		switch step.What {
 		case "HELO":
+			client, err = smtp.Dial(fmt.Sprintf(":%d", port))
+			if err != nil {
+				return smtpErr(err, integration.StepHelo)
+			}
+			client.DebugWriter = dbgLog
 			if err := client.Hello(step.Arg); err != nil {
 				return smtpErr(err, integration.StepHelo)
 			}
+			heloArg = step.Arg
 		case "STARTTLS":
-			if err := client.StartTLS(&tls.Config{InsecureSkipVerify: true}); err != nil {
+			if client != nil {
+				_ = client.Close()
+			}
+			client, err = smtp.DialStartTLS(fmt.Sprintf(":%d", port), &tls.Config{InsecureSkipVerify: true})
+			if err != nil {
+				return smtpErr(err, integration.StepAny)
+			}
+			client.DebugWriter = dbgLog
+			if _, ok := client.TLSConnectionState(); !ok {
+				return 0, "", integration.StepAny, errors.New("could not start TLS connection with STARTTLS")
+			}
+			if err := client.Hello(heloArg); err != nil {
 				return smtpErr(err, integration.StepAny)
 			}
 		case "AUTH":
@@ -195,6 +216,9 @@ func (t *TestCase) Send(steps []*integration.InputStep, port uint16) (uint16, st
 				return smtpErr(err, integration.StepAny)
 			}
 		case "BODY":
+			if dataWriter == nil {
+				panic("dataWriter is nil")
+			}
 			if _, err := dataWriter.Write(step.Data); err != nil {
 				return smtpErr(err, integration.StepAny)
 			}
@@ -211,7 +235,8 @@ func (t *TestCase) Send(steps []*integration.InputStep, port uint16) (uint16, st
 }
 
 func smtpErr(err error, step integration.DecisionStep) (uint16, string, integration.DecisionStep, error) {
-	if sErr, ok := err.(*smtp.SMTPError); ok {
+	var sErr *smtp.SMTPError
+	if errors.As(err, &sErr) {
 		return uint16(sErr.Code), sErr.Message, step, nil
 	}
 	return 0, "", step, err
