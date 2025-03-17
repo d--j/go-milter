@@ -96,7 +96,7 @@ func (p *processTestMilter) Cleanup() {
 	p.cleanupCalled++
 }
 
-var _ Milter = &processTestMilter{}
+var _ Milter = (*processTestMilter)(nil)
 
 func Test_milterSession_negotiate(t *testing.T) {
 	type fields struct {
@@ -189,7 +189,7 @@ func Test_milterSession_Process(t *testing.T) {
 		{"quit", fields{
 			backend: &processTestMilter{},
 			check: func(t *testing.T, s *serverSession) {
-				if s.backend.(*processTestMilter).cleanupCalled != 1 {
+				if s.backend.(*processTestMilter).cleanupCalled != 0 {
 					t.Fatalf("Cleanup() called %d times", s.backend.(*processTestMilter).cleanupCalled)
 				}
 			},

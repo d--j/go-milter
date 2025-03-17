@@ -13,6 +13,10 @@ const MaxServerProtocolVersion uint32 = 6
 var ErrServerClosed = errors.New("milter: server closed")
 
 // Milter is an interface for milter callback handlers.
+// You need to implement this interface to create a milter.
+// You embed the [NoOpMilter] struct in your own milter implementation to only implement the methods you need.
+// One [Milter] will handle one SMTP message/transaction. If the MTA gets multiple messages in one connection,
+// we will create a new [Milter] instance for each message.
 type Milter interface {
 	// Connect is called to provide SMTP connection data for incoming message.
 	// Suppress with OptNoConnect.
@@ -75,8 +79,9 @@ type Milter interface {
 	EndOfMessage(m *Modifier) (*Response, error)
 
 	// Abort is called if the current message has been aborted. All message data
-	// should be reset prior to the [Milter.MailFrom] callback. Connection data should be
+	// should be reset to the state prior to the [Milter.MailFrom] callback. Connection data should be
 	// preserved. [Milter.Cleanup] is not called before or after Abort.
+	// It is very likely that the next callback will be [Milter.MailFrom] again – the MTA will start over with a new message.
 	Abort(m *Modifier) error
 
 	// Unknown is called when the MTA got an unknown command in the SMTP connection.
@@ -87,14 +92,16 @@ type Milter interface {
 
 	// Cleanup always gets called when the [Milter] is about to be discarded.
 	// E.g. because the MTA closed the connection, one SMTP message was successful or there was an error.
-	// May be called more than once for a single [Milter].
+	// Your [Milter] needs to keep track on the status of the current mail transaction
 	Cleanup()
 }
 
 // NoOpMilter is a dummy [Milter] implementation that does nothing.
+// You can embed this milter in your own [Milter] implementation, when you only want/need to implement
+// some methods of the interface.
 type NoOpMilter struct{}
 
-var _ Milter = NoOpMilter{}
+var _ Milter = (*NoOpMilter)(nil)
 
 func (NoOpMilter) Connect(host string, family string, port uint16, addr string, m *Modifier) (*Response, error) {
 	return RespContinue, nil
@@ -176,7 +183,7 @@ func NewServer(opts ...Option) *Server {
 	if options.newMilter == nil {
 		panic("milter: you need to use WithMilter in NewServer call")
 	}
-	if options.maxVersion > MaxServerProtocolVersion || options.maxVersion == 1 {
+	if options.maxVersion > MaxServerProtocolVersion || options.maxVersion < 2 {
 		panic("milter: this library cannot handle this milter version")
 	}
 	if options.dialer != nil {
@@ -193,6 +200,7 @@ func NewServer(opts ...Option) *Server {
 }
 
 // Serve starts the server.
+// You can call this function multiple times to serve on multiple listeners.
 func (s *Server) Serve(ln net.Listener) error {
 	s.listeners = append(s.listeners, ln)
 	defer func(ln net.Listener, len int) {

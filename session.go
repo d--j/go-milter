@@ -60,6 +60,9 @@ func (m *serverSession) negotiate(msg *wire.Message, milterVersion uint32, milte
 		if m.version, m.actions, m.protocol, maxDataSize, err = callback(mtaVersion, milterVersion, mtaActionMask, milterActions, mtaProtoMask, milterProtocol, offeredMaxDataSize); err != nil {
 			return nil, err
 		}
+		if m.version < 2 || m.version > MaxServerProtocolVersion {
+			return nil, fmt.Errorf("milter: negotiate: unsupported protocol version: %d", m.version)
+		}
 	} else {
 		if mtaVersion < 2 || mtaVersion > MaxServerProtocolVersion {
 			return nil, fmt.Errorf("milter: negotiate: unsupported protocol version: %d", mtaVersion)
@@ -74,9 +77,6 @@ func (m *serverSession) negotiate(msg *wire.Message, milterVersion uint32, milte
 		}
 		m.protocol = milterProtocol & mtaProtoMask
 		maxDataSize = offeredMaxDataSize
-	}
-	if m.version < 2 || m.version > MaxServerProtocolVersion {
-		return nil, fmt.Errorf("milter: negotiate: unsupported protocol version: %d", m.version)
 	}
 	if maxDataSize != DataSize64K && maxDataSize != DataSize256K && maxDataSize != DataSize1M {
 		maxDataSize = DataSize64K
@@ -120,8 +120,11 @@ func (m *serverSession) negotiate(msg *wire.Message, milterVersion uint32, milte
 	return newResponse(wire.CodeOptNeg, buffer.Bytes()), nil
 }
 
-func (m *serverSession) newBackend() Milter {
-	return m.server.options.newMilter(m.version, m.actions, m.protocol, m.maxDataSize)
+func (m *serverSession) newBackend() {
+	if m.backend != nil {
+		m.backend.Cleanup()
+	}
+	m.backend = m.server.options.newMilter(m.version, m.actions, m.protocol, m.maxDataSize)
 }
 
 // Process processes incoming milter commands
@@ -313,14 +316,13 @@ func (m *serverSession) Process(msg *wire.Message) (*Response, error) {
 
 	case wire.CodeQuitNewConn:
 		// abort current connection and start over
-		m.backend.Cleanup()
 		m.macros.DelStageAndAbove(StageConnect)
-		m.backend = m.newBackend()
+		m.newBackend()
 		// do not send response
 		return nil, nil
 
 	case wire.CodeQuit:
-		m.backend.Cleanup()
+		// m.backend.Cleanup() gets called in HandleMilterCommands
 		// client requested session close
 		return nil, errCloseSession
 
@@ -336,6 +338,7 @@ func (m *serverSession) HandleMilterCommands() {
 	defer func() {
 		if m.backend != nil {
 			m.backend.Cleanup()
+			m.backend = nil
 		}
 		if m.conn != nil {
 			if err := m.conn.Close(); err != nil && err != io.EOF {
@@ -357,7 +360,7 @@ func (m *serverSession) HandleMilterCommands() {
 		LogWarning("Error negotiating: %v", err)
 		return
 	}
-	m.backend = m.newBackend()
+	m.newBackend()
 	if err = m.writePacket(resp.Response()); err != nil {
 		LogWarning("Error writing packet: %v", err)
 		return
@@ -375,7 +378,7 @@ func (m *serverSession) HandleMilterCommands() {
 
 		resp, err := m.Process(msg)
 		if err != nil {
-			if err != errCloseSession {
+			if !errors.Is(err, errCloseSession) {
 				// log error condition
 				LogWarning("Error performing milter command: %v", err)
 				if resp != nil && !m.skipResponse(msg.Code) {
@@ -397,9 +400,8 @@ func (m *serverSession) HandleMilterCommands() {
 		}
 
 		if !resp.Continue() {
-			m.backend.Cleanup()
 			// prepare backend for next message
-			m.backend = m.newBackend()
+			m.newBackend()
 			m.macros.DelStageAndAbove(StageMail)
 		}
 	}
