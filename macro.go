@@ -254,7 +254,7 @@ func (s *macrosStages) DelStageAndAbove(stage MacroStage) {
 		stages = []MacroStage{StageEOH, StageEOM, StageEndMarker}
 	case StageEOM:
 		stages = []MacroStage{StageEOM, StageEndMarker}
-	case StageEndMarker:
+	case StageEndMarker, StageNotFoundMarker:
 		stages = []MacroStage{StageEndMarker}
 	}
 	for _, st := range stages {
