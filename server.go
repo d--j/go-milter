@@ -2,6 +2,7 @@ package milter
 
 import (
 	"errors"
+	"github.com/hashicorp/go-multierror"
 	"net"
 	"time"
 )
@@ -231,17 +232,20 @@ func (s *Server) Serve(ln net.Listener) error {
 	}
 }
 
+// Close closes the server and all its listeners.
+// It returns ErrServerClosed if the server is already closed.
 func (s *Server) Close() error {
 	if s.closed {
 		return ErrServerClosed
 	}
 	s.closed = true
+	var result *multierror.Error
 	for _, ln := range s.listeners {
 		if ln != nil {
 			if err := ln.Close(); err != nil {
-				return err
+				result = multierror.Append(result, err)
 			}
 		}
 	}
-	return nil
+	return result.ErrorOrNil()
 }
