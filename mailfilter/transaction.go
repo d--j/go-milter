@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"reflect"
 	"regexp"
 
 	"github.com/d--j/go-milter"
@@ -107,7 +108,16 @@ func (t *transaction) response() *milter.Response {
 	case Discard:
 		return milter.RespDiscard
 	default:
-		resp, err := milter.RejectWithCodeAndReason(t.decision.getCode(), t.decision.getReason())
+		if t.decision == nil {
+			milter.LogWarning("milter: mailfilter returned unexpected <nil> Decision")
+			return milter.RespTempFail
+		}
+		custom, ok := t.decision.(*customResponse)
+		if !ok {
+			milter.LogWarning("milter: mailfilter returned unexpected Decision of type %s: %+v", reflect.TypeOf(t.decision).String(), t.decision)
+			return milter.RespTempFail
+		}
+		resp, err := milter.RejectWithCodeAndReason(custom.code, custom.reason)
 		if err != nil {
 			milter.LogWarning("milter: reject with custom reason failed, temp-fail instead: %s", err)
 			return milter.RespTempFail
