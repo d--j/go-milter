@@ -51,7 +51,7 @@ func (t *CrLfToLfTransformer) Reset() {
 	t.prevCR = false
 }
 
-var _ transform.Transformer = &CrLfToLfTransformer{}
+var _ transform.Transformer = (*CrLfToLfTransformer)(nil)
 
 // CrLfToLf is a helper that uses [CrLfToLfTransformer] to replace all line endings to only LF.
 //
@@ -111,7 +111,7 @@ func (t *CrLfCanonicalizationTransformer) Reset() {
 	t.prev = 0
 }
 
-var _ transform.Transformer = &CrLfCanonicalizationTransformer{}
+var _ transform.Transformer = (*CrLfCanonicalizationTransformer)(nil)
 
 // DoublePercentTransformer is a [transform.Transformer] that replaces all % in src with %% in dst.
 type DoublePercentTransformer struct {
@@ -139,7 +139,7 @@ func (t *DoublePercentTransformer) Transform(dst, src []byte, _ bool) (nDst, nSr
 	return
 }
 
-var _ transform.Transformer = &DoublePercentTransformer{}
+var _ transform.Transformer = (*DoublePercentTransformer)(nil)
 
 // SkipDoublePercentTransformer is a [transform.Transformer] that replaces all %% in src to % in dst.
 // Single % signs are left as-is.
@@ -183,19 +183,87 @@ func (t *SkipDoublePercentTransformer) Reset() {
 	t.prevDoublePercent = false
 }
 
-var _ transform.Transformer = &SkipDoublePercentTransformer{}
+var _ transform.Transformer = (*SkipDoublePercentTransformer)(nil)
 
-// SMTPReplyTransformer is a [transform.Transformer] that reads src and produces a valid SMTP response (including multi-line handling)
+// SMTPReplyTransformer is a [transform.Transformer] that reads src and produces a valid SMTP response (including multi-line handling).
+// It automatically handles RFC 2034 (Enhanced Error Codes) multiline handling (repeating the enhanced code on each line).
 //
 // This transformer does not handle CR LF canonicalization, but it needs src to be properly encoded in this way.
 //
 // When you combine this Transformer in a [transform.Chain] it can only handle lines with a maximum of 128 bytes.
 type SMTPReplyTransformer struct {
-	Code uint16
-	init bool
+	Code    uint16
+	rfc2034 string
+	init    bool
 }
 
 var errStartWithLF = errors.New("SMTP reply cannot start with LF")
+
+// FindEnhancedErrorCodeEnd tries to find the end of an RFC 2034 enhanced error code in src.
+// It returns the index of the first byte after the enhanced error code.
+// If no enhanced error code is found it returns -1.
+// The space after the enhanced error code is included in the return value.
+func FindEnhancedErrorCodeEnd(src []byte, code uint16) int {
+	if len(src) > 5 { // "1.1.1 " is the smallest enhanced error code
+
+		// check class
+		switch src[0] {
+		case '2', '4', '5':
+			if src[1] != '.' || code/100 != uint16(src[0]-'0') {
+				return -1
+			}
+		default:
+			return -1
+		}
+
+		// check subject
+		subject := 2
+		i := 2
+	loop:
+		for ; i < len(src)-1; i++ {
+			switch src[i] {
+			case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+				// no leading zeros allowed
+				if src[i] == '0' && i == 2 && (src[i+1] >= '0' && src[i+1] <= '9') {
+					return -1
+				}
+				if src[i+1] == '.' {
+					i++
+					subject = i
+					i++
+					break loop
+				}
+			default:
+				return -1
+			}
+		}
+		if subject > 5 { // X.YYY. is the biggest valid length
+			return -1
+		}
+
+		// check detail
+		for ; i < len(src)-1; i++ {
+			if i > subject+3 {
+				return -1
+			}
+			switch src[i] {
+			case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+				// no leading zeros allowed
+				if src[i] == '0' && i == subject+1 && (src[i+1] >= '0' && src[i+1] <= '9') {
+					return -1
+				}
+				// We expect the enhanced error code to be followed by a space
+				// Looks like RFC 2034 does not enforce this, but we do
+				if src[i+1] == ' ' {
+					return i + 2
+				}
+			default:
+				return -1
+			}
+		}
+	}
+	return -1
+}
 
 func (t *SMTPReplyTransformer) Transform(dst, src []byte, atEOF bool) (nDst, nSrc int, err error) {
 	if !t.init && (t.Code < 100 || t.Code > 599) {
@@ -241,9 +309,9 @@ func (t *SMTPReplyTransformer) Transform(dst, src []byte, atEOF bool) (nDst, nSr
 				nSrc++
 			}
 			if newline {
-				nDst += copy(dst[nDst:], fmt.Sprintf("%d-", t.Code))
+				nDst += copy(dst[nDst:], fmt.Sprintf("%d-%s", t.Code, t.rfc2034))
 			} else {
-				nDst += copy(dst[nDst:], fmt.Sprintf("%d ", t.Code))
+				nDst += copy(dst[nDst:], fmt.Sprintf("%d %s", t.Code, t.rfc2034))
 			}
 			// first char is missing
 			if !t.init {
@@ -251,6 +319,10 @@ func (t *SMTPReplyTransformer) Transform(dst, src []byte, atEOF bool) (nDst, nSr
 				dst[nDst] = c
 				nDst++
 				nSrc++
+				// extract enhanced error code from the first line
+				if escEnd := FindEnhancedErrorCodeEnd(src, t.Code); escEnd > -1 {
+					t.rfc2034 = string(src[:escEnd])
+				}
 			}
 		} else {
 			dst[nDst] = c
@@ -266,9 +338,10 @@ func (t *SMTPReplyTransformer) Transform(dst, src []byte, atEOF bool) (nDst, nSr
 
 func (t *SMTPReplyTransformer) Reset() {
 	t.init = false
+	t.rfc2034 = ""
 }
 
-var _ transform.Transformer = &SMTPReplyTransformer{}
+var _ transform.Transformer = (*SMTPReplyTransformer)(nil)
 
 // DefaultMaximumLineLength is the maximum line length (in bytes) that will be used by [MaximumLineLengthTransformer]
 // when its MaximumLength value is zero.
@@ -283,7 +356,7 @@ var errWrongMaximumLineLength = errors.New("MaximumLength must be 4 or more")
 // CR and LF are considered new line indicators. They do not count to the line length.
 //
 // This transformer can handle UTF-8 input.
-// Because of this we actually start tying to split lines at MaximumLength - 3 bytes.
+// Because of this we actually start trying to split lines at MaximumLength - 3 bytes.
 // This way we can assure that one line is never bigger than MaximumLength bytes.
 type MaximumLineLengthTransformer struct {
 	MaximumLength uint
@@ -330,4 +403,4 @@ func (t *MaximumLineLengthTransformer) Reset() {
 	t.length = 0
 }
 
-var _ transform.Transformer = &MaximumLineLengthTransformer{}
+var _ transform.Transformer = (*MaximumLineLengthTransformer)(nil)

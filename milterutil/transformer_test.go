@@ -165,8 +165,8 @@ func TestSkipDoublePercentTransformer(t *testing.T) {
 
 func TestSMTPReplyTransformer(t *testing.T) {
 	// transform.Transformer uses initial dst buffer size of 4096 bytes
-	manyLines := strings.Repeat("12\r\n", 786)                      // 3144 bytes
-	expectedManyLines := strings.Repeat("499-12\r\n", 786) + "499 " // 6292 bytes
+	manyLines := strings.Repeat("12\r\n", 786) + "12"                 // 3146 bytes
+	expectedManyLines := strings.Repeat("499-12\r\n", 786) + "499 12" // 6294 bytes
 	t.Parallel()
 	doTransformerTest(t, func() transform.Transformer {
 		return &SMTPReplyTransformer{Code: 499}
@@ -178,6 +178,16 @@ func TestSMTPReplyTransformer(t *testing.T) {
 		{[]string{"line1\r\nline2\r\n"}, "499-line1\r\n499-line2\r\n499 "},
 		{[]string{"line1\nline2"}, "499-line1\n499 line2"},
 		{[]string{manyLines}, expectedManyLines},
+		{[]string{"4.3.999 testing\nline 2"}, "499-4.3.999 testing\n499 4.3.999 line 2"},
+		{[]string{"4.3.999 testing\r\nline 2"}, "499-4.3.999 testing\r\n499 4.3.999 line 2"},
+		{[]string{"10.3.999 testing\r\nline 2"}, "499-10.3.999 testing\r\n499 line 2"},
+		{[]string{"4.1234.999 testing\r\nline 2"}, "499-4.1234.999 testing\r\n499 line 2"},
+		{[]string{"4.1.9999 testing\r\nline 2"}, "499-4.1.9999 testing\r\n499 line 2"},
+		{[]string{"5.3.999 testing\r\nline 2"}, "499-5.3.999 testing\r\n499 line 2"},
+		{[]string{"4.03.1 testing\r\nline 2"}, "499-4.03.1 testing\r\n499 line 2"},
+		{[]string{"4.3.009 testing\r\nline 2"}, "499-4.3.009 testing\r\n499 line 2"},
+		{[]string{"4.a.1 testing\r\nline 2"}, "499-4.a.1 testing\r\n499 line 2"},
+		{[]string{"4.1.1a testing\r\nline 2"}, "499-4.1.1a testing\r\n499 line 2"},
 	})
 	t.Run("no LF at start", func(t *testing.T) {
 		t.Parallel()

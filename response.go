@@ -121,6 +121,7 @@ func newResponseStr(code wire.Code, data string) (*Response, error) {
 // smtpCode must be between 400 and 599, otherwise this method will return an error.
 //
 // The reason can contain new-lines. Line ending canonicalization is done automatically.
+// reason can start with an RFC 2034 Enhanced Error Code. smtpCode and the Enhanced Error Code are injected on each line.
 // This function returns an error when the resulting SMTP text has a length of more than [DataSize64K] - 1
 func RejectWithCodeAndReason(smtpCode uint16, reason string) (*Response, error) {
 	if smtpCode < 400 || smtpCode > 599 {
