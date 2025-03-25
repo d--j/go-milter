@@ -1,7 +1,6 @@
 package mailfilter
 
 import (
-	"fmt"
 	"github.com/d--j/go-milter/milterutil"
 	"strconv"
 )
@@ -70,19 +69,13 @@ func (c quarantineResponse) getCode() uint16 {
 }
 
 func (c quarantineResponse) getReason() string {
-	if c.reason == "" {
-		return "accept (quarantined)"
-	}
-	if eecEnd := milterutil.FindEnhancedErrorCodeEnd([]byte(c.reason), 250); eecEnd != -1 {
-		return c.reason
-	}
-	return fmt.Sprintf("accept (quarantined: %q)", c.reason)
+	return "accept (quarantined)"
 }
 
 // QuarantineResponse can get used to quarantine a message.
-// The reason can contain new-lines and can start with a valid RFC 2034 extended error code.
-// The extended error code must have a class of "2".
-// See CustomErrorResponse for more information.
+// The message will be accepted but quarantined.
+// You cannot provide extended error codes or multiline responses, since reason will be used as the quarantine reason and
+// will not be passed to the client.
 func QuarantineResponse(reason string) Decision {
 	return &quarantineResponse{
 		reason: reason,

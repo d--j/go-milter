@@ -148,9 +148,9 @@ func Test_quarantineResponse_getReason(t *testing.T) {
 		want   string
 	}{
 		{"empty", fields{""}, "accept (quarantined)"},
-		{"simple", fields{"reason"}, "accept (quarantined: \"reason\")"},
-		{"EEC", fields{"2.6.0 I think this is spam"}, "2.6.0 I think this is spam"},
-		{"EEC err", fields{"4.6.0 I think this is spam"}, "accept (quarantined: \"4.6.0 I think this is spam\")"},
+		{"simple", fields{"reason"}, "accept (quarantined)"},
+		{"EEC", fields{"2.6.0 I think this is spam"}, "accept (quarantined)"},
+		{"EEC err", fields{"4.6.0 I think this is spam"}, "accept (quarantined)"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
