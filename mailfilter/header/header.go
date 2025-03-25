@@ -29,11 +29,11 @@ type Header interface {
 	// When value is the empty string, the first header field with key gets deleted.
 	Set(key string, value string)
 	// SetText sets the value of the first header field with the canonical key "key" to "value" (encoded).
-	// If key was not found, this a new header field gets added.
+	// If key was not found, a new header field gets added.
 	SetText(key string, value string)
 	// SetAddressList sets the value of the first header field with the canonical key "key" to "value" (encoded as address list).
 	// The address list is encoded as multi-line header field when the MTA supports this (Sendmail does not).
-	// If key was not found, this a new header field gets added.
+	// If key was not found, a new header field gets added.
 	SetAddressList(key string, addresses []*mail.Address)
 	// Subject returns the decoded value of the Subject field.
 	// When decoding cannot be done (e.g. because the charset is not known) the decoding error will be returned.
@@ -52,6 +52,7 @@ type Header interface {
 	// When value is the zero [time.Time] value, the Date field gets deleted.
 	SetDate(value time.Time)
 	// Reader returns an [io.Reader] that produces a full properly encoded email header representation of the current fields of this header.
+	// The reader includes the final CR LF sequence that separates a mail header from the body.
 	Reader() io.Reader
 	// Fields returns a new scanner-like iterator that iterates through all fields of this header.
 	// If you modify the header fields while iterating over them (that is explicitly allowed) you should not use multiple

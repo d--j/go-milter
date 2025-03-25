@@ -3,6 +3,7 @@ package milterutil
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net/textproto"
@@ -249,7 +250,7 @@ func TestMaximumLineLengthTransformer(t *testing.T) {
 	t.Run("enforce minimum", func(t *testing.T) {
 		t.Parallel()
 		_, err := doTransformation(&MaximumLineLengthTransformer{MaximumLength: 1}, []string{""})
-		if err != errWrongMaximumLineLength {
+		if !errors.Is(err, errWrongMaximumLineLength) {
 			t.Fatalf("err got %s, expected %s", err, errWrongMaximumLineLength)
 		}
 	})
