@@ -18,7 +18,7 @@ import (
 // trx is the [Trx] object that you can inspect to see what the [MailFilter] got as information about the current SMTP transaction.
 // You can also use trx to modify the transaction (e.g. change recipients, alter headers).
 //
-// decision is your [Decision] about this SMTP transaction. Use [Accept], [TempFail], [Reject], [Discard] or [CustomErrorResponse].
+// decision is your [Decision] about this SMTP transaction. Use [Accept], [TempFail], [Reject], [Discard], [QuarantineResponse], or [CustomErrorResponse].
 //
 // If you return a non-nil error [WithErrorHandling] will determine what happens with the current SMTP transaction.
 type DecisionModificationFunc func(ctx context.Context, trx Trx) (decision Decision, err error)

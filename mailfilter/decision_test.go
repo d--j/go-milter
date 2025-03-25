@@ -137,3 +137,29 @@ func TestQuarantineResponse(t *testing.T) {
 		})
 	}
 }
+
+func Test_quarantineResponse_getReason(t *testing.T) {
+	type fields struct {
+		reason string
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   string
+	}{
+		{"empty", fields{""}, "accept (quarantined)"},
+		{"simple", fields{"reason"}, "accept (quarantined: \"reason\")"},
+		{"EEC", fields{"2.6.0 I think this is spam"}, "2.6.0 I think this is spam"},
+		{"EEC err", fields{"4.6.0 I think this is spam"}, "accept (quarantined: \"4.6.0 I think this is spam\")"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := quarantineResponse{
+				reason: tt.fields.reason,
+			}
+			if got := c.getReason(); got != tt.want {
+				t.Errorf("getReason() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
