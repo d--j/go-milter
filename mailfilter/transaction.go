@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"reflect"
 	"regexp"
 
 	"github.com/d--j/go-milter"
@@ -107,7 +108,16 @@ func (t *transaction) response() *milter.Response {
 	case Discard:
 		return milter.RespDiscard
 	default:
-		resp, err := milter.RejectWithCodeAndReason(t.decision.getCode(), t.decision.getReason())
+		if t.decision == nil {
+			milter.LogWarning("milter: mailfilter returned unexpected <nil> Decision")
+			return milter.RespTempFail
+		}
+		custom, ok := t.decision.(*customResponse)
+		if !ok {
+			milter.LogWarning("milter: mailfilter returned unexpected Decision of type %s: %+v", reflect.TypeOf(t.decision).String(), t.decision)
+			return milter.RespTempFail
+		}
+		resp, err := milter.RejectWithCodeAndReason(custom.code, custom.reason)
 		if err != nil {
 			milter.LogWarning("milter: reject with custom reason failed, temp-fail instead: %s", err)
 			return milter.RespTempFail
@@ -151,6 +161,10 @@ func (t *transaction) hasModifications() bool {
 	if !t.hasDecision {
 		return false
 	}
+	// if we reject the message, we do not need to check for modifications
+	if t.decision != Accept {
+		return false
+	}
 	if t.quarantineReason != nil {
 		return true
 	}
@@ -182,6 +196,11 @@ func (t *transaction) hasModifications() bool {
 }
 
 func (t *transaction) sendModifications(m *milter.Modifier) error {
+	// if we reject the message, we do not need to send modifications
+	// they are useless since we do not keep the message anyway
+	if t.decision != Accept {
+		return nil
+	}
 	if t.origMailFrom.Addr != t.mailFrom.Addr || t.origMailFrom.Args != t.mailFrom.Args {
 		if err := m.ChangeFrom(t.mailFrom.Addr, t.mailFrom.Args); err != nil {
 			return err

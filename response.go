@@ -6,7 +6,6 @@ import (
 
 	"github.com/d--j/go-milter/internal/wire"
 	"github.com/d--j/go-milter/milterutil"
-	"golang.org/x/text/transform"
 )
 
 // Response represents a response structure returned by callback
@@ -119,27 +118,12 @@ func newResponseStr(code wire.Code, data string) (*Response, error) {
 // RejectWithCodeAndReason stops processing and tells client the error code and reason to sent
 //
 // smtpCode must be between 400 and 599, otherwise this method will return an error.
-//
-// The reason can contain new-lines. Line ending canonicalization is done automatically.
-// reason can start with an RFC 2034 Enhanced Error Code. smtpCode and the Enhanced Error Code are injected on each line.
-// This function returns an error when the resulting SMTP text has a length of more than [DataSize64K] - 1
+// See [milterutil.FormatResponse] for the rules on the reason string.
 func RejectWithCodeAndReason(smtpCode uint16, reason string) (*Response, error) {
 	if smtpCode < 400 || smtpCode > 599 {
 		return nil, fmt.Errorf("milter: invalid code %d", smtpCode)
 	}
-	if len(reason) > int(DataSize64K)-5 {
-		return nil, fmt.Errorf("milter: reason too long: %d > %d", len(reason), int(DataSize64K)-5)
-	}
-	escapeAndNormalize := transform.Chain(&milterutil.DoublePercentTransformer{}, &milterutil.CrLfCanonicalizationTransformer{})
-	data, _, err := transform.String(escapeAndNormalize, strings.TrimRight(reason, "\r\n"))
-	if err != nil {
-		return nil, err
-	}
-	data, _, err = transform.String(&milterutil.MaximumLineLengthTransformer{}, data)
-	if err != nil {
-		return nil, err
-	}
-	data, _, err = transform.String(&milterutil.SMTPReplyTransformer{Code: smtpCode}, data)
+	data, err := milterutil.FormatResponse(smtpCode, reason)
 	if err != nil {
 		return nil, err
 	}
