@@ -161,6 +161,10 @@ func (t *transaction) hasModifications() bool {
 	if !t.hasDecision {
 		return false
 	}
+	// if we reject the message, we do not need to check for modifications
+	if t.decision != Accept {
+		return false
+	}
 	if t.quarantineReason != nil {
 		return true
 	}
@@ -192,6 +196,11 @@ func (t *transaction) hasModifications() bool {
 }
 
 func (t *transaction) sendModifications(m *milter.Modifier) error {
+	// if we reject the message, we do not need to send modifications
+	// they are useless since we do not keep the message anyway
+	if t.decision != Accept {
+		return nil
+	}
 	if t.origMailFrom.Addr != t.mailFrom.Addr || t.origMailFrom.Args != t.mailFrom.Args {
 		if err := m.ChangeFrom(t.mailFrom.Addr, t.mailFrom.Args); err != nil {
 			return err
