@@ -14,28 +14,6 @@ import (
 	"golang.org/x/text/transform"
 )
 
-type ModificationKind int
-
-const (
-	ChangeFrom   ModificationKind = iota // a change mail from modification would have been sent to the MTA
-	AddRcptTo                            // an add-recipient modification would have been sent to the MTA
-	DelRcptTo                            // a delete-recipient modification would have been sent to the MTA
-	InsertHeader                         // an insert-header modification would have been sent to the MTA
-	ChangeHeader                         // a change-header modification would have been sent to the MTA
-	ReplaceBody                          // a replace-body modification would have been sent to the MTA
-)
-
-// Modification is a modification that a [mailfilter.DecisionModificationFunc] made to the Trx.
-type Modification struct {
-	Kind  ModificationKind
-	Addr  string
-	Args  string
-	Index int
-	Name  string
-	Value string
-	Body  []byte
-}
-
 // Trx implements [mailfilter.Trx] for unit tests.
 // Use this struct when you want to test your decision functions.
 // You can use the fluent Set* methods of this struct to build up the transaction you want to test.
