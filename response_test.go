@@ -32,7 +32,7 @@ func TestRejectWithCodeAndReason(t *testing.T) {
 		{"Newline4", args{400, "\n\r"}, "400 ", false},
 		{"%", args{400, "%"}, "400 %%", false},
 		{"Multi invalid EEC", args{400, "5.7.1 go away\r\nreally!"}, "400-5.7.1 go away\r\n400 really!", false},
-		{"null-bytes", args{400, "bogus\x00reason"}, "", true},
+		{"null-bytes", args{400, "bogus\x00reason"}, "400 bogus reason", false},
 		{"invalid-code1", args{200, ""}, "", true},
 		{"invalid-code2", args{999, ""}, "", true},
 		{"too-big", args{400, tooBig}, "", true},

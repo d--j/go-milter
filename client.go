@@ -425,17 +425,8 @@ func (s *ClientSession) readAction(skipOk bool) (*Action, error) {
 		if err != nil {
 			return nil, err
 		}
-		switch act.Type {
-		case ActionSkip:
-			if !skipOk {
-				return nil, fmt.Errorf("action read: unexpected skip message received (can only be received after SMFIC_RCPT, SMFIC_HEADER, SMFIC_BODY when SMFIP_SKIP was negotiated)")
-			}
-		case ActionReject:
-			act.SMTPCode = 550
-			act.SMTPReply = "550 5.7.1 Command rejected"
-		case ActionTempFail:
-			act.SMTPCode = 451
-			act.SMTPReply = "451 4.7.1 Service unavailable - try again later"
+		if act.Type == ActionSkip && !skipOk {
+			return nil, fmt.Errorf("action read: unexpected skip message received (can only be received after SMFIC_RCPT, SMFIC_HEADER, SMFIC_BODY when SMFIP_SKIP was negotiated)")
 		}
 
 		return act, err
@@ -445,6 +436,8 @@ func (s *ClientSession) readAction(skipOk bool) (*Action, error) {
 func (s *ClientSession) writePacket(msg *wire.Message) error {
 	return wire.WritePacket(s.conn, msg, s.writeTimeout)
 }
+
+var actionContinue = &Action{Type: ActionContinue}
 
 // Conn sends the connection information to the milter.
 //
@@ -465,7 +458,7 @@ func (s *ClientSession) Conn(hostname string, family ProtoFamily, port uint16, a
 	}
 
 	if s.ProtocolOption(OptNoConnect) {
-		return &Action{Type: ActionContinue}, nil
+		return actionContinue, nil
 	}
 
 	msg := &wire.Message{
@@ -487,7 +480,7 @@ func (s *ClientSession) Conn(hostname string, family ProtoFamily, port uint16, a
 	}
 
 	if s.ProtocolOption(OptNoConnReply) {
-		return &Action{Type: ActionContinue}, nil
+		return actionContinue, nil
 	}
 
 	act, err := s.readAction(false)
@@ -523,7 +516,7 @@ func (s *ClientSession) Helo(helo string) (*Action, error) {
 	// Synthesise response as if server replied "go on" while in fact it does
 	// not want or support that message.
 	if s.ProtocolOption(OptNoHelo) {
-		return &Action{Type: ActionContinue}, nil
+		return actionContinue, nil
 	}
 
 	msg := &wire.Message{
@@ -536,7 +529,7 @@ func (s *ClientSession) Helo(helo string) (*Action, error) {
 	}
 
 	if s.ProtocolOption(OptNoHeloReply) {
-		return &Action{Type: ActionContinue}, nil
+		return actionContinue, nil
 	}
 
 	act, err := s.readAction(false)
@@ -568,7 +561,7 @@ func (s *ClientSession) Mail(sender string, esmtpArgs string) (*Action, error) {
 	}
 
 	if s.ProtocolOption(OptNoMailFrom) {
-		return &Action{Type: ActionContinue}, nil
+		return actionContinue, nil
 	}
 
 	msg := &wire.Message{
@@ -585,7 +578,7 @@ func (s *ClientSession) Mail(sender string, esmtpArgs string) (*Action, error) {
 	}
 
 	if s.ProtocolOption(OptNoMailReply) {
-		return &Action{Type: ActionContinue}, nil
+		return actionContinue, nil
 	}
 
 	act, err := s.readAction(false)
@@ -603,7 +596,7 @@ func (s *ClientSession) Rcpt(rcpt string, esmtpArgs string) (*Action, error) {
 		return nil, s.errorOut(fmt.Errorf("milter: in wrong state %d", s.state))
 	}
 	if s.skip {
-		return &Action{Type: ActionContinue}, nil
+		return actionContinue, nil
 	}
 
 	s.state = clientStateRcptCalled
@@ -615,7 +608,7 @@ func (s *ClientSession) Rcpt(rcpt string, esmtpArgs string) (*Action, error) {
 	}
 
 	if s.ProtocolOption(OptNoRcptTo) {
-		return &Action{Type: ActionContinue}, nil
+		return actionContinue, nil
 	}
 
 	msg := &wire.Message{
@@ -632,7 +625,7 @@ func (s *ClientSession) Rcpt(rcpt string, esmtpArgs string) (*Action, error) {
 	}
 
 	if s.ProtocolOption(OptNoRcptReply) {
-		return &Action{Type: ActionContinue}, nil
+		return actionContinue, nil
 	}
 
 	act, err := s.readAction(s.ProtocolOption(OptSkip))
@@ -641,7 +634,7 @@ func (s *ClientSession) Rcpt(rcpt string, esmtpArgs string) (*Action, error) {
 	}
 	if act.Type == ActionSkip {
 		s.skip = true
-		return &Action{Type: ActionContinue}, nil
+		return actionContinue, nil
 	}
 	return act, nil
 }
@@ -666,7 +659,7 @@ func (s *ClientSession) DataStart() (*Action, error) {
 	}
 
 	if s.ProtocolOption(OptNoData) {
-		return &Action{Type: ActionContinue}, nil
+		return actionContinue, nil
 	}
 
 	msg := &wire.Message{
@@ -678,7 +671,7 @@ func (s *ClientSession) DataStart() (*Action, error) {
 	}
 
 	if s.ProtocolOption(OptNoDataReply) {
-		return &Action{Type: ActionContinue}, nil
+		return actionContinue, nil
 	}
 
 	act, err := s.readAction(false)
@@ -716,13 +709,13 @@ func (s *ClientSession) HeaderField(key, value string, macros map[MacroName]stri
 		return nil, s.errorOut(fmt.Errorf("milter: in wrong state %d", s.state))
 	}
 	if s.skip {
-		return &Action{Type: ActionContinue}, nil
+		return actionContinue, nil
 	}
 
 	s.state = clientStateHeaderFieldCalled
 
 	if s.ProtocolOption(OptNoHeaders) {
-		return &Action{Type: ActionContinue}, nil
+		return actionContinue, nil
 	}
 
 	if err := s.sendCmdMacros(wire.CodeHeader, macros); err != nil {
@@ -740,7 +733,7 @@ func (s *ClientSession) HeaderField(key, value string, macros map[MacroName]stri
 	}
 
 	if s.ProtocolOption(OptNoHeaderReply) {
-		return &Action{Type: ActionContinue}, nil
+		return actionContinue, nil
 	}
 
 	act, err := s.readAction(s.ProtocolOption(OptSkip))
@@ -749,7 +742,7 @@ func (s *ClientSession) HeaderField(key, value string, macros map[MacroName]stri
 	}
 	if act.Type == ActionSkip {
 		s.skip = true
-		return &Action{Type: ActionContinue}, nil
+		return actionContinue, nil
 	}
 	return act, nil
 }
@@ -771,7 +764,7 @@ func (s *ClientSession) HeaderEnd() (*Action, error) {
 	}
 
 	if s.ProtocolOption(OptNoEOH) {
-		return &Action{Type: ActionContinue}, nil
+		return actionContinue, nil
 	}
 
 	if err := s.writePacket(&wire.Message{
@@ -781,7 +774,7 @@ func (s *ClientSession) HeaderEnd() (*Action, error) {
 	}
 
 	if s.ProtocolOption(OptNoEOHReply) {
-		return &Action{Type: ActionContinue}, nil
+		return actionContinue, nil
 	}
 
 	act, err := s.readAction(false)
@@ -794,7 +787,7 @@ func (s *ClientSession) HeaderEnd() (*Action, error) {
 // Header sends each field from textproto.Header followed by EOH unless
 // header messages are disabled during negotiation.
 //
-// You may call HeaderField before calling this method but since it calls HeaderEnd afterwards
+// You may call HeaderField before calling this method but since it calls HeaderEnd afterward
 // you should call BodyChunk or BodyReadFrom.
 func (s *ClientSession) Header(hdr textproto.Header) (*Action, error) {
 	if s.state < clientStateRcptCalled || s.state > clientStateHeaderFieldCalled {
@@ -806,13 +799,13 @@ func (s *ClientSession) Header(hdr textproto.Header) (*Action, error) {
 			return act, err
 		}
 	}
-	if !s.ProtocolOption(OptNoHeaders) || s.skip {
+	if !s.ProtocolOption(OptNoHeaders) && !s.skip {
 		for f := hdr.Fields(); f.Next(); {
 			act, err := s.HeaderField(f.Key(), f.Value(), nil)
 			if err != nil || (act.Type != ActionContinue) {
 				return act, err
 			}
-			if s.skip {
+			if s.skip { // HeaderField() can set s.skip
 				break
 			}
 		}
@@ -834,12 +827,13 @@ func (s *ClientSession) BodyChunk(chunk []byte) (*Action, error) {
 		return nil, s.errorOut(fmt.Errorf("milter: body: in wrong state %d", s.state))
 	}
 	s.state = clientStateBodyChunkCalled
+
 	if s.skip {
-		return &Action{Type: ActionContinue}, nil
+		return actionContinue, nil
 	}
 
 	if s.ProtocolOption(OptNoBody) {
-		return &Action{Type: ActionContinue}, nil
+		return actionContinue, nil
 	}
 
 	if len(chunk) > int(s.maxBodySize) {
@@ -854,7 +848,7 @@ func (s *ClientSession) BodyChunk(chunk []byte) (*Action, error) {
 	}
 
 	if s.ProtocolOption(OptNoBodyReply) {
-		return &Action{Type: ActionContinue}, nil
+		return actionContinue, nil
 	}
 
 	act, err := s.readAction(s.ProtocolOption(OptSkip))
@@ -863,7 +857,7 @@ func (s *ClientSession) BodyChunk(chunk []byte) (*Action, error) {
 	}
 	if act.Type == ActionSkip {
 		s.skip = true
-		return &Action{Type: ActionContinue}, nil
+		return actionContinue, nil
 	}
 	return act, nil
 }
@@ -887,7 +881,7 @@ func (s *ClientSession) BodyReadFrom(r io.Reader) ([]ModifyAction, *Action, erro
 			if err != nil {
 				return nil, nil, err
 			}
-			if s.skip {
+			if s.skip { // BodyChunk can set s.skip
 				break
 			}
 			if act.Type != ActionContinue {
@@ -984,7 +978,7 @@ func (s *ClientSession) Unknown(cmd string, macros map[MacroName]string) (*Actio
 	}
 
 	if s.ProtocolOption(OptNoUnknown) || s.skipUnknown {
-		return &Action{Type: ActionContinue}, nil
+		return actionContinue, nil
 	}
 
 	if err := s.sendCmdMacros(wire.CodeUnknown, macros); err != nil {
@@ -1001,7 +995,7 @@ func (s *ClientSession) Unknown(cmd string, macros map[MacroName]string) (*Actio
 	}
 
 	if s.ProtocolOption(OptNoUnknownReply) {
-		return &Action{Type: ActionContinue}, nil
+		return actionContinue, nil
 	}
 
 	act, err := s.readAction(false)

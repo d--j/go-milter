@@ -6,11 +6,12 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"io"
-	"net/textproto"
-
 	"github.com/d--j/go-milter/internal/wire"
 	"github.com/d--j/go-milter/milterutil"
+	"io"
+	"math"
+	"net/textproto"
+	"strings"
 )
 
 type ActionType int
@@ -25,6 +26,8 @@ const (
 	ActionRejectWithCode
 )
 
+// Action represents the action that the milter wants to take on the current message.
+// The client can call StopProcessing on it to check if the milter wants to abort the connection/message.
 type Action struct {
 	Type ActionType
 
@@ -34,14 +37,20 @@ type Action struct {
 	SMTPReply string
 }
 
-// StopProcessing returns true when the milter wants to immediately stop this SMTP connection.
+// StopProcessing returns true when the milter wants to immediately stop this SMTP connection
+// (a.Type is one of ActionReject, ActionTempFail or ActionRejectWithCode).
 // You can use [Action.SMTPReply] to send as reply to the current SMTP command.
 func (a Action) StopProcessing() bool {
-	return a.SMTPCode > 0
+	switch a.Type {
+	case ActionReject, ActionTempFail, ActionRejectWithCode:
+		return true
+	default:
+		return false
+	}
 }
 
 func parseAction(msg *wire.Message) (*Action, error) {
-	act := &Action{}
+	act := &Action{SMTPCode: 250, SMTPReply: "250 accept"}
 
 	switch wire.ActionCode(msg.Code) {
 	case wire.ActAccept:
@@ -52,24 +61,35 @@ func parseAction(msg *wire.Message) (*Action, error) {
 		act.Type = ActionDiscard
 	case wire.ActReject:
 		act.Type = ActionReject
+		act.SMTPCode = 550
+		act.SMTPReply = "550 5.7.1 Command rejected"
 	case wire.ActTempFail:
 		act.Type = ActionTempFail
+		act.SMTPCode = 451
+		act.SMTPReply = "451 4.7.1 Service unavailable - try again later"
 	case wire.ActSkip:
 		act.Type = ActionSkip
 	case wire.ActReplyCode:
 		if len(msg.Data) <= 4 {
 			return nil, fmt.Errorf("action read: unexpected data length: %d", len(msg.Data))
 		}
-		checker := textproto.NewReader(bufio.NewReader(bytes.NewReader(msg.Data)))
+		if msg.Data[len(msg.Data)-1] != 0 {
+			return nil, fmt.Errorf("action read: missing NUL terminator")
+		}
+		cmd := msg.Data[:len(msg.Data)-1]
+		checker := textproto.NewReader(bufio.NewReader(bytes.NewReader(cmd)))
 		// this also accepts FTP style multi-line responses as valid
 		// It's highly unlikely that milter sends one of those, so we ignore this false positive
 		code, _, err := checker.ReadResponse(0)
 		if err != nil {
 			return nil, fmt.Errorf("action read: malformed SMTP response: %q", msg.Data)
 		}
+		if code < 400 || code > 599 {
+			return nil, fmt.Errorf("action read: invalid SMTP code: %d", code)
+		}
 		act.Type = ActionRejectWithCode
 		act.SMTPCode = uint16(code)
-		act.SMTPReply = wire.ReadCString(msg.Data) // use raw response as it was formatted by milter
+		act.SMTPReply = strings.TrimRight(wire.ReadCString(msg.Data), "\r\n") // use raw response as it was formatted by milter
 	default:
 		return nil, fmt.Errorf("action read: unexpected code: %c", msg.Code)
 	}
@@ -114,7 +134,7 @@ type ModifyAction struct {
 	// Index is 1-based.
 	//
 	// If Type = ActionChangeHeader the index is per canonical value of HdrName.
-	// E.g. HeaderIndex = 3 and HdrName = "DKIM-Signature" mean "change third field with the canonical header name Dkim-Signature".
+	// E.g. HeaderIndex = 3 and HdrName = "DKIM-Signature" means "change third field with the canonical header name Dkim-Signature".
 	// Order is the same as of HeaderField calls.
 	//
 	// If Type = ActionInsertHeader the index is global to all headers, 1-based and means "insert after the HeaderIndex header".
@@ -123,6 +143,7 @@ type ModifyAction struct {
 	// Deleted headers (Type = ActionChangeHeader and HeaderValue == "") may change the indexes of the other headers.
 	// Postfix MTA removes the header from the linked list (and thus change the indexes of headers coming after the deleted header).
 	// Sendmail on the other hand will only mark the header as deleted.
+	// To be consistent, you should delete headers in reverse order.
 	HeaderIndex uint32
 
 	// Header field name to be added/changed if Type == ActionAddHeader or
@@ -140,17 +161,17 @@ type ModifyAction struct {
 
 func parseModifyAct(msg *wire.Message) (*ModifyAction, error) {
 	act := &ModifyAction{}
-
+	data := msg.Data
 	switch wire.ModifyActCode(msg.Code) {
 	case wire.ActAddRcpt:
-		argv := bytes.Split(msg.Data, []byte{0x00})
+		argv := bytes.Split(data, []byte{0x00})
 		if len(argv) != 2 {
 			return nil, fmt.Errorf("read modify action: wrong number of arguments %d for ActAddRcpt action", len(argv))
 		}
 		act.Type = ActionAddRcpt
 		act.Rcpt = string(argv[0])
 	case wire.ActAddRcptPar:
-		argv := bytes.Split(msg.Data, []byte{0x00})
+		argv := bytes.Split(data, []byte{0x00})
 		if len(argv) > 3 || len(argv) < 2 {
 			return nil, fmt.Errorf("read modify action: wrong number of arguments %d for ActAddRcpt action", len(argv))
 		}
@@ -160,16 +181,22 @@ func parseModifyAct(msg *wire.Message) (*ModifyAction, error) {
 			act.RcptArgs = string(argv[1])
 		}
 	case wire.ActDelRcpt:
+		if len(data) == 0 || data[len(data)-1] != 0 {
+			return nil, fmt.Errorf("action read: missing NUL terminator")
+		}
 		act.Type = ActionDelRcpt
-		act.Rcpt = wire.ReadCString(msg.Data)
+		act.Rcpt = wire.ReadCString(data)
 	case wire.ActQuarantine:
+		if len(data) == 0 || data[len(data)-1] != 0 {
+			return nil, fmt.Errorf("action read: missing NUL terminator")
+		}
 		act.Type = ActionQuarantine
-		act.Reason = wire.ReadCString(msg.Data)
+		act.Reason = wire.ReadCString(data)
 	case wire.ActReplBody:
 		act.Type = ActionReplaceBody
-		act.Body = msg.Data
+		act.Body = data
 	case wire.ActChangeFrom:
-		argv := bytes.Split(msg.Data, []byte{0x00})
+		argv := bytes.Split(data, []byte{0x00})
 		if len(argv) > 3 || len(argv) < 2 {
 			return nil, fmt.Errorf("read modify action: wrong number of arguments %d for ActChangeFrom action", len(argv))
 		}
@@ -179,7 +206,7 @@ func parseModifyAct(msg *wire.Message) (*ModifyAction, error) {
 			act.FromArgs = string(argv[1])
 		}
 	case wire.ActChangeHeader, wire.ActInsertHeader:
-		if len(msg.Data) < 4 {
+		if len(data) < 4 {
 			return nil, fmt.Errorf("read modify action: missing header index")
 		}
 		if wire.ModifyActCode(msg.Code) == wire.ActChangeHeader {
@@ -187,17 +214,17 @@ func parseModifyAct(msg *wire.Message) (*ModifyAction, error) {
 		} else {
 			act.Type = ActionInsertHeader
 		}
-		act.HeaderIndex = binary.BigEndian.Uint32(msg.Data)
+		act.HeaderIndex = binary.BigEndian.Uint32(data)
 
 		// Sendmail 8 compatibility
 		if wire.ModifyActCode(msg.Code) == wire.ActChangeHeader && act.HeaderIndex == 0 {
 			act.HeaderIndex = 1
 		}
 
-		msg.Data = msg.Data[4:]
+		data = data[4:]
 		fallthrough
 	case wire.ActAddHeader:
-		argv := bytes.Split(msg.Data, []byte{0x00})
+		argv := bytes.Split(data, []byte{0x00})
 		if len(argv) != 3 {
 			return nil, fmt.Errorf("read modify action: wrong number of arguments %d for header action: %v", len(argv), argv)
 		}
@@ -261,11 +288,11 @@ func (m *Modifier) AddRecipient(r string, esmtpArgs string) error {
 	}
 	code := wire.ActAddRcpt
 	var buffer bytes.Buffer
-	buffer.WriteString(AddAngle(r))
+	buffer.WriteString(AddAngle(milterutil.NewlineToSpace(r)))
 	buffer.WriteByte(0)
 	// send wire.ActAddRcptPar when that is the only allowed action, or we need to send it because esmptArgs ist set
 	if (esmtpArgs != "" && m.actions&OptAddRcptWithArgs != 0) || (esmtpArgs == "" && m.actions&OptAddRcpt == 0) {
-		buffer.WriteString(esmtpArgs)
+		buffer.WriteString(milterutil.NewlineToSpace(esmtpArgs))
 		buffer.WriteByte(0)
 		code = wire.ActAddRcptPar
 	}
@@ -277,7 +304,7 @@ func (m *Modifier) DeleteRecipient(r string) error {
 	if m.actions&OptRemoveRcpt == 0 {
 		return ErrModificationNotAllowed
 	}
-	resp, err := newResponseStr(wire.Code(wire.ActDelRcpt), AddAngle(r))
+	resp, err := newResponseStr(wire.Code(wire.ActDelRcpt), AddAngle(milterutil.NewlineToSpace(r)))
 	if err != nil {
 		return err
 	}
@@ -303,9 +330,9 @@ func (m *Modifier) ReplaceBodyRawChunk(chunk []byte) error {
 // ReplaceBody reads from r and send its contents in the least amount of chunks to the MTA.
 //
 // This function does not do any CR LF line ending canonicalization or maximum line length enforcements.
-// If you need that you can use the various transform.Transformers of this package to wrap your reader.
+// If you need that you can use the various transform.Transformers of the milterutil package to wrap your reader.
 //
-//	t := transform.Chain(&milter.CrLfCanonicalizationTransformer{}, &milter.MaximumLineLengthTransformer{})
+//	t := transform.Chain(&milterutil.CrLfCanonicalizationTransformer{}, &milterutil.MaximumLineLengthTransformer{})
 //	wrappedR := transform.NewReader(r, t)
 //	m.ReplaceBody(wrappedR)
 //
@@ -332,7 +359,19 @@ func (m *Modifier) Quarantine(reason string) error {
 	if m.actions&OptQuarantine == 0 {
 		return ErrModificationNotAllowed
 	}
-	return m.writePacket(newResponse(wire.Code(wire.ActQuarantine), []byte(reason+"\x00")).Response())
+	return m.writePacket(newResponse(wire.Code(wire.ActQuarantine), []byte(milterutil.NewlineToSpace(reason)+"\x00")).Response())
+}
+
+func validName(name string) bool {
+	if len(name) == 0 {
+		return false
+	}
+	for _, r := range []byte(name) {
+		if r <= ' ' || r >= '\x7F' || r == ':' {
+			return false
+		}
+	}
+	return true
 }
 
 // AddHeader appends a new email message header to the message
@@ -344,9 +383,20 @@ func (m *Modifier) Quarantine(reason string) error {
 //
 // If you always want to add the header at the very end you need to use InsertHeader with
 // a very high index.
+//
+// The header name must be valid. It can only contain printable ASCII characters without SP and colon.
+//
+// value can include newlines. They will be canonicalized to LF.
+// If the value includes newlines, it should also have the continuation character (SP or HT) at the beginning of the lines.
+// The continuation character is not mandatory, but it is recommended to use it.
+// NUL characters get converted to SP.
+
 func (m *Modifier) AddHeader(name, value string) error {
 	if m.actions&OptAddHeader == 0 {
 		return ErrModificationNotAllowed
+	}
+	if !validName(name) {
+		return fmt.Errorf("milter: invalid header name: %q", name)
 	}
 	var buffer bytes.Buffer
 	buffer.WriteString(name)
@@ -357,12 +407,25 @@ func (m *Modifier) AddHeader(name, value string) error {
 }
 
 // ChangeHeader replaces the header at the specified position with a new one.
-// The index is per canonical name and one-based. To delete a header pass an empty value.
+// The index is per canonical header name and one-based. To delete a header pass an empty value.
 // If the index is bigger than there are headers with that name, then ChangeHeader will actually
 // add a new header at the end of the header list (With the same semantic as AddHeader).
+//
+// The header name must be valid. It can only contain printable ASCII characters without SP and colon.
+//
+// value can include newlines. They will be canonicalized to LF.
+// If the value includes newlines, it should also have the continuation character (SP or HT) at the beginning of the lines.
+// The continuation character is not mandatory, but it is recommended to use it.
+// NUL characters get converted to SP.
 func (m *Modifier) ChangeHeader(index int, name, value string) error {
 	if m.actions&OptChangeHeader == 0 {
 		return ErrModificationNotAllowed
+	}
+	if index < 0 || index > math.MaxUint32 {
+		return fmt.Errorf("milter: invalid header index: %d", index)
+	}
+	if !validName(name) {
+		return fmt.Errorf("milter: invalid header name: %q", name)
 	}
 	var buffer bytes.Buffer
 	if err := binary.Write(&buffer, binary.BigEndian, uint32(index)); err != nil {
@@ -377,6 +440,15 @@ func (m *Modifier) ChangeHeader(index int, name, value string) error {
 
 // InsertHeader inserts the header at the specified position.
 // index is one-based. The index 0 means at the very beginning.
+// If the index is bigger than the number of headers, then the header will be added at the end.
+// Unlike ChangeHeader, index is not per canonical header name but the index in the list of all headers.
+//
+// The header name must be valid. It can only contain printable ASCII characters without SP and colon.
+//
+// value can include newlines. They will be canonicalized to LF.
+// If the value includes newlines, it should also have the continuation character (SP or HT) at the beginning of the lines.
+// The continuation character is not mandatory, but it is recommended to use it.
+// NUL characters get converted to SP.
 //
 // Unfortunately when interacting with Sendmail the index is used to find the position
 // in Sendmail's internal list of headers. Not all of those internal headers get send to the milter.
@@ -385,6 +457,12 @@ func (m *Modifier) InsertHeader(index int, name, value string) error {
 	// Insert header does not have its own action flag
 	if m.actions&OptChangeHeader == 0 && m.actions&OptAddHeader == 0 {
 		return ErrModificationNotAllowed
+	}
+	if index < 0 || index > math.MaxUint32 {
+		return fmt.Errorf("milter: invalid header index: %d", index)
+	}
+	if !validName(name) {
+		return fmt.Errorf("milter: invalid header name: %q", name)
 	}
 	var buffer bytes.Buffer
 	if err := binary.Write(&buffer, binary.BigEndian, uint32(index)); err != nil {
@@ -411,10 +489,10 @@ func (m *Modifier) ChangeFrom(value string, esmtpArgs string) error {
 		return ErrModificationNotAllowed
 	}
 	var buffer bytes.Buffer
-	buffer.WriteString(AddAngle(value))
+	buffer.WriteString(AddAngle(milterutil.NewlineToSpace(value)))
 	buffer.WriteByte(0)
 	if esmtpArgs != "" {
-		buffer.WriteString(esmtpArgs)
+		buffer.WriteString(milterutil.NewlineToSpace(esmtpArgs))
 		buffer.WriteByte(0)
 	}
 	return m.writePacket(newResponse(wire.Code(wire.ActChangeFrom), buffer.Bytes()).Response())
@@ -423,7 +501,12 @@ func (m *Modifier) ChangeFrom(value string, esmtpArgs string) error {
 var respProgress = &Response{code: wire.Code(wire.ActProgress)}
 
 // Progress tells the client that there is progress in a long operation
+// and that the client should not time out the milter connection.
+//
+// This function can be called in any callback handler (unlike all other functions of [Modifier]).
+// It will send a progress notification packet to the MTA. When it returns an error, the connection to the MTA is broken.
 func (m *Modifier) Progress() error {
+
 	return m.writeProgressPacket(respProgress.Response())
 }
 
@@ -446,7 +529,7 @@ func newModifier(s *serverSession, readOnly bool) *Modifier {
 	}
 }
 
-// NewTestModifier is only exported for unit-tests. It can only be use internally since it uses the internal package [wire].
+// NewTestModifier is only exported for unit-tests. It can only be used internally since it uses the internal package [wire].
 func NewTestModifier(macros Macros, writePacket, writeProgress func(msg *wire.Message) error, actions OptAction, maxDataSize DataSize) *Modifier {
 	return &Modifier{
 		Macros:              macros,

@@ -1659,7 +1659,7 @@ func TestMilterClient_WithMockServer(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer session.Close()
+			t.Cleanup(func() { _ = session.Close() })
 			for i, op := range ltt.ops {
 				t.Logf("%q op %d", ltt.name, i)
 				if op.s1 != nil {

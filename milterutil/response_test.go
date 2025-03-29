@@ -18,6 +18,7 @@ func TestFormatResponse(t *testing.T) {
 	}{
 		{"EmptyReason", args{400, ""}, "400 ", false},
 		{"SimpleReason", args{400, "Test 1"}, "400 Test 1", false},
+		{"FixedReason", args{400, "Test 1\u0000"}, "400 Test 1 ", false},
 		{"TrimmedReason1", args{400, "\n\n\n"}, "400 ", false},
 		{"TrimmedReason2", args{400, "Line 1\r\n"}, "400 Line 1", false},
 		{"Multiline1", args{400, "Line 1\nLine 2"}, "400-Line 1\r\n400 Line 2", false},
