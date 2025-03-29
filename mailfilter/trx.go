@@ -75,8 +75,9 @@ type Trx interface {
 	// This method returns nil when you used [WithDecisionAt] with anything other than [DecisionAtEndOfMessage]
 	// or you used [WithoutBody].
 	Body() io.ReadSeeker
-	// ReplaceBody replaces the body of the current message with the contents
-	// of the [io.Reader] r.
+	// ReplaceBody replaces the body of the current message with the contents of the [io.Reader] r.
+	// The reader will only get read once, but it might get buffered when you call [Data] on the transaction.
+	// When the reader implements the [io.Closer] interface, the milter will call [io.Closer.Close] on the reader when it is done with it.
 	ReplaceBody(r io.Reader)
 
 	// QueueId is the queue ID the MTA assigned for this transaction.
@@ -84,4 +85,10 @@ type Trx interface {
 	//
 	// Only populated if [WithDecisionAt] is bigger than [DecisionAtMailFrom].
 	QueueId() string
+
+	// Data returns the full email data (headers and body) of the current message.
+	// It includes any modifications you made to the Headers and either uses Body or ReplaceBody as the body of the message.
+	// If you set WithoutBody, WithDecisionAt is not DecisionAtEndOfMessage, or the body is bigger than the configured maximum body size, Data will be the same as [header.Header.Reader].
+	// A call to Data might re-use the Body io.ReadSeeker. Using Data and Body at the same time is not supported.
+	Data() io.Reader
 }

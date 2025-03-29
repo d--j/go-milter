@@ -1,9 +1,12 @@
 package mailfilter
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"github.com/d--j/go-milter/internal/body"
+	"github.com/d--j/go-milter/internal/header"
 	"io"
 	"reflect"
 	"strings"
@@ -211,8 +214,21 @@ func TestTransaction_sendModifications(t1 *testing.T) {
 		}, []*wire.Message{
 			mod(wire.ActReplBody, []byte("test")),
 		}, false},
+		{"replace-body-buffered", func(_ context.Context, trx Trx) (Decision, error) {
+			trx.ReplaceBody(strings.NewReader("test"))
+			trx.Data()
+			return Accept, nil
+		}, []*wire.Message{
+			mod(wire.ActReplBody, []byte("test")),
+		}, false},
 		{"replace-body-err", func(ctx context.Context, trx Trx) (Decision, error) {
 			trx.ReplaceBody(io.NopCloser(strings.NewReader("test")))
+			ctx.Value("s").(*mockSession).WritePacket = writeErr
+			return Accept, nil
+		}, nil, true},
+		{"replace-body-buffered-err", func(ctx context.Context, trx Trx) (Decision, error) {
+			trx.ReplaceBody(io.NopCloser(strings.NewReader("test")))
+			trx.Data()
 			ctx.Value("s").(*mockSession).WritePacket = writeErr
 			return Accept, nil
 		}, nil, true},
@@ -343,6 +359,52 @@ func Test_transaction_HeadersEnforceOrder(t1 *testing.T) {
 			t.HeadersEnforceOrder()
 			if got := t.enforceHeaderOrder; got != tt.want {
 				t1.Errorf("enforceHeaderOrder = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_transaction_Data(t1 *testing.T) {
+	hdrs, _ := header.New([]byte("From: root@localhost\r\nTo: root@localhost\r\n\r\n"))
+	bdy := func(data []byte) *body.Body {
+		b := body.New(len(data), int64(len(data)))
+		_, _ = b.Write(data)
+		return b
+	}
+	type fields struct {
+		origHeaders         *header.Header
+		headers             *header.Header
+		body                *body.Body
+		bodyReplacement     io.Reader
+		bufferedReplacement *body.Body
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		want    []byte
+		wantErr bool
+	}{
+		{"not-replaced", fields{hdrs.Copy(), hdrs.Copy(), bdy([]byte("test")), nil, nil}, []byte("From: root@localhost\r\nTo: root@localhost\r\n\r\ntest"), false},
+		{"replaced", fields{hdrs.Copy(), hdrs.Copy(), bdy([]byte("test")), bytes.NewReader([]byte("test1")), nil}, []byte("From: root@localhost\r\nTo: root@localhost\r\n\r\ntest1"), false},
+		{"replaced-buffered", fields{hdrs.Copy(), hdrs.Copy(), bdy([]byte("test")), bytes.NewReader([]byte("test1")), bdy([]byte("test2"))}, []byte("From: root@localhost\r\nTo: root@localhost\r\n\r\ntest2"), false},
+		{"replaced-err", fields{hdrs.Copy(), hdrs.Copy(), bdy([]byte("test")), body.ErrReader{Err: io.ErrUnexpectedEOF}, nil}, []byte("From: root@localhost\r\nTo: root@localhost\r\n\r\n"), true},
+	}
+	for _, tt := range tests {
+		t1.Run(tt.name, func(t1 *testing.T) {
+			t := &transaction{
+				headers:             tt.fields.headers,
+				origHeaders:         tt.fields.origHeaders,
+				body:                tt.fields.body,
+				bodyReplacement:     tt.fields.bodyReplacement,
+				bufferedReplacement: tt.fields.bufferedReplacement,
+			}
+			r := t.Data()
+			got, err := io.ReadAll(r)
+			if (err != nil) != tt.wantErr {
+				t1.Errorf("Data() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if bytes.Compare(got, tt.want) != 0 {
+				t1.Errorf("Data() = %q, want %q", got, tt.want)
 			}
 		})
 	}

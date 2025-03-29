@@ -3,6 +3,7 @@ package mailfilter
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"reflect"
 	"regexp"
@@ -49,23 +50,25 @@ type Helo struct {
 // transaction can be used to examine the data of the current mail transaction and
 // also send changes to the message back to the MTA.
 type transaction struct {
-	mta                MTA
-	connect            Connect
-	helo               Helo
-	mailFrom           addr.MailFrom
-	origMailFrom       addr.MailFrom
-	rcptTos            []*addr.RcptTo
-	origRcptTos        []*addr.RcptTo
-	headers            *header.Header
-	origHeaders        *header.Header
-	enforceHeaderOrder bool
-	body               *body.Body
-	replacementBody    io.Reader
-	queueId            string
-	hasDecision        bool
-	decision           Decision
-	decisionErr        error
-	quarantineReason   *string
+	mta                 MTA
+	connect             Connect
+	helo                Helo
+	mailFrom            addr.MailFrom
+	origMailFrom        addr.MailFrom
+	rcptTos             []*addr.RcptTo
+	origRcptTos         []*addr.RcptTo
+	headers             *header.Header
+	origHeaders         *header.Header
+	enforceHeaderOrder  bool
+	body                *body.Body
+	bodyReplacement     io.Reader
+	bufferedReplacement *body.Body
+	queueId             string
+	hasDecision         bool
+	decision            Decision
+	decisionErr         error
+	quarantineReason    *string
+	bodyOpt             bodyOption
 }
 
 func (t *transaction) MTA() *MTA {
@@ -171,7 +174,7 @@ func (t *transaction) hasModifications() bool {
 	if t.origMailFrom.Addr != t.mailFrom.Addr || t.origMailFrom.Args != t.mailFrom.Args {
 		return true
 	}
-	if t.replacementBody != nil {
+	if t.bodyReplacement != nil {
 		return true
 	}
 	if len(t.origRcptTos) != len(t.rcptTos) {
@@ -196,6 +199,9 @@ func (t *transaction) hasModifications() bool {
 }
 
 func (t *transaction) sendModifications(m *milter.Modifier) error {
+	defer func() {
+		t.closeReplacementBody()
+	}()
 	// if we reject the message, we do not need to send modifications
 	// they are useless since we do not keep the message anyway
 	if t.decision != Accept {
@@ -233,7 +239,7 @@ func (t *transaction) sendModifications(m *milter.Modifier) error {
 	}
 	for _, op := range addOps {
 		// Sendmail has headers in its envelop headers list that it does not send to the milter.
-		// But the *do* count to the insert index?! So for sendmail we cannot really add a header at a specific position.
+		// But they *do* count to the insert index?! So for sendmail we cannot really add a header at a specific position.
 		// (Other than beginning, that is index 0).
 		// We add the arbitrary number 100 to the index so that we skip any and all "hidden" sendmail headers when we
 		// want to insert at the end of the header list.
@@ -242,11 +248,12 @@ func (t *transaction) sendModifications(m *milter.Modifier) error {
 			return err
 		}
 	}
-	if t.replacementBody != nil {
-		defer func() {
-			t.closeReplacementBody()
-		}()
-		if err := m.ReplaceBody(t.replacementBody); err != nil {
+	if t.bufferedReplacement != nil {
+		if err := m.ReplaceBody(t.bufferedReplacement); err != nil {
+			return err
+		}
+	} else if t.bodyReplacement != nil {
+		if err := m.ReplaceBody(t.bodyReplacement); err != nil {
 			return err
 		}
 	}
@@ -267,9 +274,19 @@ func (t *transaction) addHeader(key string, raw []byte) {
 
 func (t *transaction) addBodyChunk(chunk []byte) (err error) {
 	if t.body == nil {
-		t.body = body.New(200 * 1024)
+		t.body = body.New(t.bodyOpt.MaxMem, t.bodyOpt.MaxSize)
 	}
 	_, err = t.body.Write(chunk)
+	if errors.Is(err, body.ErrBodyTooLarge) {
+		if t.bodyOpt.MaxAction == RejectMessageWhenTooBig {
+			return err
+		}
+		err = nil
+		if t.bodyOpt.MaxAction == ClearWhenTooBig {
+			t.body = body.New(1024, 0)
+		}
+		t.body.DisableWriting = true
+	}
 	return
 }
 
@@ -318,18 +335,52 @@ func (t *transaction) Body() io.ReadSeeker {
 
 func (t *transaction) ReplaceBody(r io.Reader) {
 	t.closeReplacementBody()
-	t.replacementBody = r
+	t.bodyReplacement = r
+}
+
+func (t *transaction) Data() io.Reader {
+	if t.bodyReplacement != nil && t.bufferedReplacement == nil {
+		t.bufferedReplacement = body.New(t.bodyOpt.MaxMem, 0)
+		_, err := io.Copy(t.bufferedReplacement, t.bodyReplacement)
+		if err != nil {
+			t.bufferedReplacement = nil
+			return io.MultiReader(t.Headers().Reader(), body.ErrReader{Err: err})
+		}
+	}
+	if t.bufferedReplacement != nil {
+		_, err := t.bufferedReplacement.Seek(0, io.SeekStart)
+		if err != nil {
+			return io.MultiReader(t.Headers().Reader(), body.ErrReader{Err: err})
+		}
+		return io.MultiReader(t.Headers().Reader(), t.bufferedReplacement)
+	}
+	b := t.Body()
+	if b != nil {
+		return io.MultiReader(t.Headers().Reader(), b)
+	}
+	return t.Headers().Reader()
 }
 
 func (t *transaction) closeReplacementBody() {
-	if t.replacementBody != nil {
-		if closer, ok := t.replacementBody.(io.Closer); ok {
+	if t.bodyReplacement != nil {
+		if closer, ok := t.bodyReplacement.(io.Closer); ok {
 			if err := closer.Close(); err != nil {
 				milter.LogWarning("error while closing replacement body: %s", err)
 			}
 		}
-		t.replacementBody = nil
+		t.bodyReplacement = nil
+		t.bufferedReplacement = nil
 	}
+}
+
+func (t *transaction) wantsBodyChunks() bool {
+	if t.hasDecision || t.bodyOpt.Skip {
+		return false
+	}
+	if t.body != nil && t.body.DisableWriting {
+		return false
+	}
+	return true
 }
 
 var _ Trx = (*transaction)(nil)

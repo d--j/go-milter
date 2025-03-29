@@ -3,7 +3,6 @@ package testtrx_test
 import (
 	"context"
 	"fmt"
-
 	"github.com/d--j/go-milter/mailfilter"
 	"github.com/d--j/go-milter/mailfilter/addr"
 	"github.com/d--j/go-milter/mailfilter/testtrx"
@@ -48,5 +47,5 @@ func ExampleTrx() {
 		fmt.Println(m)
 	}
 
-	// Output: {0  A=B 0   []}
+	// Output: ChangeFrom "" "A=B"
 }

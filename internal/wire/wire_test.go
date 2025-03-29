@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -171,6 +172,29 @@ func TestWritePacket(t *testing.T) {
 			}
 			if !bytes.Equal(resp.data, ltt.want) {
 				t.Errorf("read data mismatch got = %+v, want %+v", resp.data, ltt.want)
+			}
+		})
+	}
+}
+
+func TestAppendUint16(t *testing.T) {
+	type args struct {
+		dest []byte
+		val  uint16
+	}
+	tests := []struct {
+		name string
+		args args
+		want []byte
+	}{
+		{"Empty", args{[]byte{}, 0x1234}, []byte{0x12, 0x34}},
+		{"Nil", args{nil, 0x1234}, []byte{0x12, 0x34}},
+		{"Append", args{[]byte{0, 0}, 0x1234}, []byte{0, 0, 0x12, 0x34}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := AppendUint16(tt.args.dest, tt.args.val); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("AppendUint16() = %v, want %v", got, tt.want)
 			}
 		})
 	}

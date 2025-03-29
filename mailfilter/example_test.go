@@ -4,7 +4,11 @@ import (
 	"context"
 	"flag"
 	"log"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/d--j/go-milter/mailfilter"
 )
@@ -37,10 +41,20 @@ func ExampleNew() {
 		mailfilter.WithDecisionAt(mailfilter.DecisionAtEndOfHeaders),
 	)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 	log.Printf("Started milter on %s:%s", mailFilter.Addr().Network(), mailFilter.Addr().String())
 
+	// wait for SIGINT or SIGTERM
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sig
+		log.Printf("Gracefully shutting down milter…")
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		mailFilter.Shutdown(ctx)
+	}()
 	// wait for the mail filter to end
 	mailFilter.Wait()
 }

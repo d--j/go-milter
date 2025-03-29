@@ -30,7 +30,7 @@ type Modification struct {
 	Body  []byte
 }
 
-func (m *Modification) String() string {
+func (m Modification) String() string {
 	switch m.Kind {
 	case ChangeFrom:
 		return fmt.Sprintf("ChangeFrom %q %q", m.Addr, m.Args)
@@ -54,6 +54,8 @@ func (m *Modification) String() string {
 // It returns an empty string if the slices are equal.
 // If there are differences, the returned string will be formatted in unified diff format.
 // The diff algorithm is very naive so you will get unnecessarily big diffs.
+// The modifications are sorted before comparison. When the order of modifications is not significant (i.e. for DelRcptTo),
+// this function will consider two slices equal if they contain the same modifications, regardless of the order.
 func DiffModifications(expected, got []Modification) string {
 	sortModifications(expected)
 	sortModifications(got)
@@ -112,6 +114,9 @@ var sortOrder = map[ModificationKind]int{
 // sortModifications sorts the modifications in the slice without changing the semantics.
 func sortModifications(mods []Modification) {
 	slices.SortStableFunc(mods, func(a, b Modification) int {
+		if a.Kind == DelRcptTo && b.Kind == DelRcptTo {
+			return strings.Compare(a.Addr, b.Addr)
+		}
 		return sortOrder[a.Kind] - sortOrder[b.Kind]
 	})
 }

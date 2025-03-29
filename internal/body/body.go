@@ -3,16 +3,20 @@ package body
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os"
 )
 
+var ErrBodyTooLarge = errors.New("body too large")
+
 // New creates a new Body that switches from memory-backed storage to file-backed storage
 // when more than maxMem bytes were written to it.
 //
-// If maxMem is less than 1 a temporary file gets always used.
-func New(maxMem int) *Body {
-	return &Body{maxMem: maxMem}
+// If maxMem is less than 1, a temporary file gets always used.
+// If maxSize is bigger than 0, the Body will return an error when more than maxSize bytes are written to it.
+func New(maxMem int, maxSize int64) *Body {
+	return &Body{maxMem: maxMem, maxSize: maxSize}
 }
 
 // Body is an [io.ReadSeekCloser] and [io.Writer] that starts buffering all data written to it in memory
@@ -21,11 +25,14 @@ func New(maxMem int) *Body {
 // After a call to Read or Seek no more data can be written to Body.
 // Body is an [io.Seeker] so you can read it multiple times or get the size of the Body.
 type Body struct {
-	maxMem  int
-	buf     bytes.Buffer
-	mem     *bytes.Reader
-	file    *os.File
-	reading bool
+	maxMem         int
+	size           int64
+	maxSize        int64
+	buf            bytes.Buffer
+	mem            *bytes.Reader
+	file           *os.File
+	reading        bool
+	DisableWriting bool // if set to true, Write will not write any data (same as io.Discard)
 }
 
 // Write implements the io.Writer interface.
@@ -34,17 +41,31 @@ func (b *Body) Write(p []byte) (n int, err error) {
 	if b.reading {
 		panic("cannot write after read")
 	}
-	if b.file != nil {
-		return b.file.Write(p)
+	if b.DisableWriting {
+		return len(p), nil
 	}
-	n, _ = b.buf.Write(p)
-	if b.buf.Len() > b.maxMem {
-		b.file, err = os.CreateTemp("", "body-*")
-		if err != nil {
-			return
+	if b.maxSize > 0 && b.size+int64(len(p)) > b.maxSize {
+		remaining := b.maxSize - b.size
+		if remaining > 0 {
+			n, _ = b.Write(p[:remaining])
 		}
-		_, err = io.Copy(b.file, &b.buf)
-		b.buf.Reset()
+		return n, ErrBodyTooLarge
+	}
+	if b.file != nil {
+		n, err = b.file.Write(p)
+	} else {
+		n, _ = b.buf.Write(p)
+		if b.buf.Len() > b.maxMem {
+			b.file, err = os.CreateTemp("", "body-*")
+			if err != nil {
+				return
+			}
+			_, err = io.Copy(b.file, &b.buf)
+			b.buf.Reset()
+		}
+	}
+	if b.maxSize > 0 {
+		b.size += int64(n)
 	}
 	return
 }

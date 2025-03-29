@@ -3,6 +3,7 @@ package header
 
 import (
 	"bytes"
+	"github.com/emersion/go-message"
 	"io"
 	netmail "net/mail"
 	"net/textproto"
@@ -32,6 +33,7 @@ type Field struct {
 	Index        int
 	CanonicalKey string
 	Raw          []byte
+	deleted      bool
 }
 
 func (f *Field) Key() string {
@@ -47,7 +49,7 @@ func (f *Field) UnfoldedValue() string {
 }
 
 func (f *Field) Deleted() bool {
-	return len(f.Raw) <= len(f.CanonicalKey)+1
+	return f.deleted
 }
 
 const helperKey = "Helper"
@@ -66,7 +68,11 @@ type Header struct {
 func New(raw []byte) (*Header, error) {
 	r, err := mail.CreateReader(bytes.NewReader(raw))
 	if err != nil {
-		return nil, err
+		if message.IsUnknownCharset(err) {
+			err = nil
+		} else {
+			return nil, err
+		}
 	}
 	f := r.Header.Fields()
 	h := Header{}
@@ -96,17 +102,17 @@ func (h *Header) Copy() *Header {
 }
 
 func (h *Header) AddRaw(key string, raw []byte) {
-	h.fields = append(h.fields, &Field{len(h.fields), textproto.CanonicalMIMEHeaderKey(key), raw})
+	h.fields = append(h.fields, &Field{len(h.fields), textproto.CanonicalMIMEHeaderKey(key), raw, false})
 }
 
 func (h *Header) Add(key string, value string) {
-	h.fields = append(h.fields, &Field{-1, textproto.CanonicalMIMEHeaderKey(key), getRaw(key, value)})
+	h.fields = append(h.fields, &Field{-1, textproto.CanonicalMIMEHeaderKey(key), getRaw(key, value), false})
 }
 
 func (h *Header) Value(key string) string {
 	canonicalKey := textproto.CanonicalMIMEHeaderKey(key)
 	for _, f := range h.fields {
-		if f.CanonicalKey == canonicalKey {
+		if f.CanonicalKey == canonicalKey && !f.Deleted() {
 			return f.Value()
 		}
 	}
@@ -116,7 +122,7 @@ func (h *Header) Value(key string) string {
 func (h *Header) UnfoldedValue(key string) string {
 	canonicalKey := textproto.CanonicalMIMEHeaderKey(key)
 	for _, f := range h.fields {
-		if f.CanonicalKey == canonicalKey {
+		if f.CanonicalKey == canonicalKey && !f.Deleted() {
 			return f.UnfoldedValue()
 		}
 	}
@@ -129,7 +135,7 @@ func (h *Header) Text(key string) (string, error) {
 	}
 	canonicalKey := textproto.CanonicalMIMEHeaderKey(key)
 	for _, f := range h.fields {
-		if f.CanonicalKey == canonicalKey {
+		if f.CanonicalKey == canonicalKey && !f.Deleted() {
 			h.helper.Set(helperKey, f.UnfoldedValue())
 			return h.helper.Text(helperKey)
 		}
@@ -143,7 +149,7 @@ func (h *Header) AddressList(key string) ([]*mail.Address, error) {
 	}
 	canonicalKey := textproto.CanonicalMIMEHeaderKey(key)
 	for _, f := range h.fields {
-		if f.CanonicalKey == canonicalKey {
+		if f.CanonicalKey == canonicalKey && !f.Deleted() {
 			h.helper.Set(helperKey, f.UnfoldedValue())
 			return h.helper.AddressList(helperKey)
 		}
@@ -159,6 +165,7 @@ func (h *Header) Set(key string, value string) {
 				Index:        h.fields[i].Index,
 				CanonicalKey: canonicalKey,
 				Raw:          getRaw(h.fields[i].Key(), value),
+				deleted:      value == "",
 			}
 			return
 		}
@@ -213,7 +220,7 @@ func (h *Header) Fields() header.Fields {
 
 func (h *Header) Reader() io.Reader {
 	const crlf = "\r\n"
-	readers := make([]io.Reader, 0, len(h.fields)*2+1)
+	readers := make([]io.Reader, 0, h.Len()*2+1)
 	for _, f := range h.fields {
 		if !f.Deleted() { // skip deleted
 			readers = append(readers, bytes.NewReader(f.Raw))
@@ -222,6 +229,11 @@ func (h *Header) Reader() io.Reader {
 	}
 	readers = append(readers, strings.NewReader(crlf))
 	return io.MultiReader(readers...)
+}
+
+// Len returns the number of fields in the header. It includes deleted fields.
+func (h *Header) Len() int {
+	return len(h.fields)
 }
 
 var _ header.Header = (*Header)(nil)
@@ -237,13 +249,16 @@ func (f *Fields) Next() bool {
 	f.cursor += f.skip // skip the InsertAfter headers
 	f.skip = 0
 	f.cursor += 1
-	return f.cursor < len(f.h.fields)
+	return f.h == nil || f.cursor < len(f.h.fields)
 }
 
 // Len returns the number of fields in the header.
 // This also includes deleted headers fields.
 // Initially no fields are deleted so Len returns the actual number of header fields.
 func (f *Fields) Len() int {
+	if f == nil || f.h == nil {
+		return 0
+	}
 	return len(f.h.fields)
 }
 
@@ -300,7 +315,7 @@ func getRaw(key string, value string) []byte {
 
 func (f *Fields) Set(value string) {
 	idx := f.index()
-	f.h.fields[idx] = &Field{f.h.fields[idx].Index, f.CanonicalKey(), getRaw(f.Key(), value)}
+	f.h.fields[idx] = &Field{f.h.fields[idx].Index, f.CanonicalKey(), getRaw(f.Key(), value), value == ""}
 }
 
 func (f *Fields) text(value string) string {
@@ -326,7 +341,7 @@ func (f *Fields) Del() {
 
 func (f *Fields) Replace(key string, value string) {
 	idx := f.index()
-	f.h.fields[idx] = &Field{f.h.fields[idx].Index, textproto.CanonicalMIMEHeaderKey(key), getRaw(key, value)}
+	f.h.fields[idx] = &Field{f.h.fields[idx].Index, textproto.CanonicalMIMEHeaderKey(key), getRaw(key, value), false}
 }
 
 func (f *Fields) ReplaceText(key string, value string) {
@@ -339,7 +354,7 @@ func (f *Fields) ReplaceAddressList(key string, value []*mail.Address) {
 
 func (f *Fields) insert(index int, key string, value string) {
 	tail := make([]*Field, 1, 1+len(f.h.fields)-index)
-	tail[0] = &Field{-1, textproto.CanonicalMIMEHeaderKey(key), getRaw(key, value)}
+	tail[0] = &Field{-1, textproto.CanonicalMIMEHeaderKey(key), getRaw(key, value), false}
 	tail = append(tail, f.h.fields[index:]...)
 	f.h.fields = append(f.h.fields[:index], tail...)
 }

@@ -50,9 +50,9 @@ func Test_diffFields(t *testing.T) {
 			fields.Replace("X-Test", "1")
 		}
 	}
-	xTest := Field{-1, "X-Test", []byte("X-Test: 1")}
-	subjectChanged := Field{2, "Subject", []byte("subject: changed")}
-	dateDel := Field{3, "Date", []byte("DATE:")}
+	xTest := Field{-1, "X-Test", []byte("X-Test: 1"), false}
+	subjectChanged := Field{2, "Subject", []byte("subject: changed"), false}
+	dateDel := Field{3, "Date", []byte("DATE:"), false}
 
 	type args struct {
 		orig    []*Field

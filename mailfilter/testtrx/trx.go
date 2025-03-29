@@ -3,8 +3,7 @@ package testtrx
 
 import (
 	"bytes"
-	"io"
-
+	"github.com/d--j/go-milter/internal/body"
 	"github.com/d--j/go-milter/internal/header"
 	"github.com/d--j/go-milter/internal/rcptto"
 	"github.com/d--j/go-milter/mailfilter"
@@ -12,6 +11,7 @@ import (
 	header2 "github.com/d--j/go-milter/mailfilter/header"
 	"github.com/d--j/go-milter/milterutil"
 	"golang.org/x/text/transform"
+	"io"
 )
 
 // Trx implements [mailfilter.Trx] for unit tests.
@@ -33,6 +33,11 @@ type Trx struct {
 	enforceHeaderOrder bool
 	body               io.ReadSeeker
 	bodyReplacement    io.Reader
+	replacementBuffer  *body.Body
+	// MaxMem can be used to set the maximum memory used for the body replacement buffer.
+	// If MaxMem is nil, the default value of 200KiB is used.
+	// If the body replacement buffer exceeds this limit, the replacement buffer will automatically be buffered to disk.
+	MaxMem *int
 }
 
 func (t *Trx) MTA() *mailfilter.MTA {
@@ -161,6 +166,33 @@ func (t *Trx) ReplaceBody(r io.Reader) {
 	t.bodyReplacement = r
 }
 
+func (t *Trx) Data() io.Reader {
+	if t.bodyReplacement != nil && t.replacementBuffer == nil {
+		maxMem := 200 * 1024
+		if t.MaxMem != nil {
+			maxMem = *t.MaxMem
+		}
+		t.replacementBuffer = body.New(maxMem, 0)
+		_, err := io.Copy(t.replacementBuffer, t.bodyReplacement)
+		if err != nil {
+			t.replacementBuffer = nil
+			return io.MultiReader(t.Headers().Reader(), body.ErrReader{Err: err})
+		}
+	}
+	if t.replacementBuffer != nil {
+		_, err := t.replacementBuffer.Seek(0, io.SeekStart)
+		if err != nil {
+			return io.MultiReader(t.Headers().Reader(), body.ErrReader{Err: err})
+		}
+		return io.MultiReader(t.Headers().Reader(), t.replacementBuffer)
+	}
+	b := t.Body()
+	if b != nil {
+		return io.MultiReader(t.Headers().Reader(), b)
+	}
+	return t.Headers().Reader()
+}
+
 func (t *Trx) QueueId() string {
 	return t.queueId
 }
@@ -196,7 +228,17 @@ func (t *Trx) Modifications() []Modification {
 		mods = append(mods, Modification{Kind: InsertHeader, Index: op.Index + len(changeInsertOps) + 100, Name: op.Name, Value: op.Value})
 	}
 
-	if t.bodyReplacement != nil {
+	if t.replacementBuffer != nil {
+		_, err := t.replacementBuffer.Seek(0, io.SeekStart)
+		if err != nil {
+			panic(err)
+		}
+		b, err := io.ReadAll(t.replacementBuffer)
+		if err != nil {
+			panic(err)
+		}
+		mods = append(mods, Modification{Kind: ReplaceBody, Body: b})
+	} else if t.bodyReplacement != nil {
 		b, err := io.ReadAll(t.bodyReplacement)
 		if err != nil {
 			panic(err)
