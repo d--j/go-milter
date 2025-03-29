@@ -59,6 +59,8 @@ func main() {
 			}
 			trx.Headers().Add("X-ADD1", "Test")
 			trx.Headers().Add("X-ADD2", "Test")
+		case "multiline@example.com":
+			trx.Headers().Add("X-MultiLine", "Line1\n\tLine2\n\tLine3")
 		case "change-to@example.com":
 			addr, err := trx.Headers().AddressList("To")
 			if err != nil {

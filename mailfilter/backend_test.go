@@ -58,14 +58,24 @@ func (s *mockSession) newModifier() *milter.Modifier {
 }
 
 func newMockBackend() (*backend, *mockSession) {
+	body := bodyOption{
+		MaxMem:    200 * 1024,
+		MaxSize:   100 * 1024 * 1024,
+		MaxAction: TruncateWhenTooBig,
+	}
 	return &backend{
 		opts: options{
 			decisionAt:    DecisionAtEndOfMessage,
 			errorHandling: Error,
+			body:          &body,
+			header: &headerOption{
+				Max:       512,
+				MaxAction: TruncateWhenTooBig,
+			},
 		},
 		leadingSpace: false,
 		decision:     nil,
-		transaction:  &transaction{},
+		transaction:  &transaction{bodyOpt: body},
 	}, &mockSession{}
 }
 
@@ -117,6 +127,69 @@ func Test_backend_BodyChunk(t *testing.T) {
 	b.transaction.cleanup()
 	if string(data) != "testtest" {
 		t.Fatalf("got %q, expected %q", data, "testtest")
+	}
+}
+
+func Test_backend_BodyChunkMaxReject(t *testing.T) {
+	t.Parallel()
+	b, s := newMockBackend()
+	b.opts.body.MaxSize = 6
+	b.opts.body.MaxAction = RejectMessageWhenTooBig
+	b.transaction.bodyOpt = *b.opts.body
+	resp, err := b.BodyChunk([]byte("test"), s.newModifier())
+	assertContinue(t, resp, err)
+	resp, err = b.BodyChunk([]byte("test"), s.newModifier())
+	if err != nil {
+		t.Fatalf("got err %s", err)
+	}
+	if resp == nil {
+		t.Fatalf("got nil resp")
+	}
+	want := "response=reply_code action=reject code=552 reason=\"552 5.3.4 Maximum allowed body size of 6 bytes exceeded.\""
+	if resp.String() != want {
+		t.Fatalf("got resp %s, expected %s", resp.String(), want)
+	}
+}
+
+func Test_backend_BodyChunkMaxTruncate(t *testing.T) {
+	t.Parallel()
+	b, s := newMockBackend()
+	b.opts.body.MaxSize = 6
+	b.opts.body.MaxAction = TruncateWhenTooBig
+	b.transaction.bodyOpt = *b.opts.body
+	resp, err := b.BodyChunk([]byte("test"), s.newModifier())
+	assertContinue(t, resp, err)
+	resp, err = b.BodyChunk([]byte("test"), s.newModifier())
+	assertContinue(t, resp, err)
+	if b.transaction.body == nil {
+		t.Fatal("body file is nil")
+	}
+	_, _ = b.transaction.body.Seek(0, io.SeekStart)
+	data, _ := io.ReadAll(b.transaction.body)
+	b.transaction.cleanup()
+	if string(data) != "testte" {
+		t.Fatalf("got %q, expected %q", data, "testte")
+	}
+}
+
+func Test_backend_BodyChunkMaxClear(t *testing.T) {
+	t.Parallel()
+	b, s := newMockBackend()
+	b.opts.body.MaxSize = 6
+	b.opts.body.MaxAction = ClearWhenTooBig
+	b.transaction.bodyOpt = *b.opts.body
+	resp, err := b.BodyChunk([]byte("test"), s.newModifier())
+	assertContinue(t, resp, err)
+	resp, err = b.BodyChunk([]byte("test"), s.newModifier())
+	assertContinue(t, resp, err)
+	if b.transaction.body == nil {
+		t.Fatal("body file is nil")
+	}
+	_, _ = b.transaction.body.Seek(0, io.SeekStart)
+	data, _ := io.ReadAll(b.transaction.body)
+	b.transaction.cleanup()
+	if string(data) != "" {
+		t.Fatalf("got %q, expected %q", data, "")
 	}
 }
 
@@ -241,23 +314,97 @@ func Test_backend_Header(t *testing.T) {
 	resp, err := b.Header("from", "root", s.newModifier())
 	assertContinue(t, resp, err)
 	b.leadingSpace = true
-	resp, err = b.Header("To", " root, nobody", s.newModifier())
+	resp, err = b.Header("To", " root, 1", s.newModifier())
 	assertContinue(t, resp, err)
-	resp, err = b.Header("To", "root, nobody", s.newModifier())
+	resp, err = b.Header("To", "root, 2", s.newModifier())
 	assertContinue(t, resp, err)
 	b.leadingSpace = false
-	resp, err = b.Header("To", "\troot, nobody", s.newModifier())
+	resp, err = b.Header("To", "\troot, 3", s.newModifier())
 	assertContinue(t, resp, err)
-	expect, err := header.New([]byte("from: root\r\nTo: root, nobody\r\nTo: root, nobody\r\nTo:\troot, nobody\r\n\r\n"))
+	resp, err = b.Header("To", "root, 4", s.newModifier())
+	assertContinue(t, resp, err)
+	expect, err := header.New([]byte("from: root\r\nTo: root, 1\r\nTo:root, 2\r\nTo:\troot, 3\r\nTo: root, 4\n\r\n"))
 	if err != nil {
 		panic(err)
 	}
 	got := b.transaction.origHeaders
-	if !reflect.DeepEqual(got, expect) {
+	if outputFields(got) != outputFields(expect) {
 		t.Fatalf("Header() = %q, expected %q", outputFields(got), outputFields(expect))
 	}
 }
 
+func Test_backend_HeaderMaxReject(t *testing.T) {
+	t.Parallel()
+	b, s := newMockBackend()
+	b.opts.header.Max = 2
+	b.opts.header.MaxAction = RejectMessageWhenTooBig
+	resp, err := b.Header("from", "root", s.newModifier())
+	assertContinue(t, resp, err)
+	b.leadingSpace = true
+	resp, err = b.Header("To", " root, 1", s.newModifier())
+	assertContinue(t, resp, err)
+	resp, err = b.Header("To", "root, 2", s.newModifier())
+	if err != nil {
+		t.Fatalf("got err %s", err)
+	}
+	if resp == nil {
+		t.Fatalf("got nil resp")
+	}
+	want := "response=reply_code action=reject code=552 reason=\"552 5.3.4 Maximum allowed header lines (2) exceeded.\""
+	if resp.String() != want {
+		t.Fatalf("got resp %s, expected %s", resp.String(), want)
+	}
+}
+
+func Test_backend_HeaderMaxTruncate(t *testing.T) {
+	t.Parallel()
+	b, s := newMockBackend()
+	b.opts.header.Max = 2
+	b.opts.header.MaxAction = TruncateWhenTooBig
+	resp, err := b.Header("from", "root", s.newModifier())
+	assertContinue(t, resp, err)
+	resp, err = b.Header("To", "root, 1", s.newModifier())
+	assertContinue(t, resp, err)
+	resp, err = b.Header("To", "root, 2", s.newModifier())
+	assertContinue(t, resp, err)
+	resp, err = b.Header("To", "root, 3", s.newModifier())
+	assertContinue(t, resp, err)
+	resp, err = b.Header("To", "root, 4", s.newModifier())
+	assertContinue(t, resp, err)
+	expect, err := header.New([]byte("from: root\r\nTo: root, 1\r\n\r\n"))
+	if err != nil {
+		panic(err)
+	}
+	got := b.transaction.origHeaders
+	if outputFields(got) != outputFields(expect) {
+		t.Fatalf("Header() = %q, expected %q", outputFields(got), outputFields(expect))
+	}
+}
+
+func Test_backend_HeaderMaxClear(t *testing.T) {
+	t.Parallel()
+	b, s := newMockBackend()
+	b.opts.header.Max = 2
+	b.opts.header.MaxAction = ClearWhenTooBig
+	resp, err := b.Header("from", "root", s.newModifier())
+	assertContinue(t, resp, err)
+	resp, err = b.Header("To", "root, 1", s.newModifier())
+	assertContinue(t, resp, err)
+	resp, err = b.Header("To", "root, 2", s.newModifier())
+	assertContinue(t, resp, err)
+	resp, err = b.Header("To", "root, 3", s.newModifier())
+	assertContinue(t, resp, err)
+	resp, err = b.Header("To", "root, 4", s.newModifier())
+	assertContinue(t, resp, err)
+	expect, err := header.New([]byte("\r\n"))
+	if err != nil {
+		panic(err)
+	}
+	got := b.transaction.origHeaders
+	if outputFields(got) != outputFields(expect) {
+		t.Fatalf("Header() = %q, expected %q", outputFields(got), outputFields(expect))
+	}
+}
 func Test_backend_Headers(t *testing.T) {
 }
 

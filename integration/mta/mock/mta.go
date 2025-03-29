@@ -355,7 +355,7 @@ func (s *Session) Data(r io.Reader) error {
 			if len(act.HeaderValue) == 0 || (act.HeaderValue[0] != ' ' && act.HeaderValue[0] != '\t') {
 				maybeSpace = " "
 			}
-			raw := fmt.Sprintf("%s:%s%s\r\n", act.HeaderName, maybeSpace, act.HeaderValue)
+			raw := fmt.Sprintf("%s:%s%s\r\n", act.HeaderName, maybeSpace, headerValue(act.HeaderValue))
 			headers = append(headers, &field{
 				key:       textproto.CanonicalMIMEHeaderKey(act.HeaderName),
 				changeIdx: -1,
@@ -367,7 +367,7 @@ func (s *Session) Data(r io.Reader) error {
 			if len(act.HeaderValue) == 0 || (act.HeaderValue[0] != ' ' && act.HeaderValue[0] != '\t') {
 				maybeSpace = " "
 			}
-			raw := fmt.Sprintf("%s:%s%s\r\n", act.HeaderName, maybeSpace, act.HeaderValue)
+			raw := fmt.Sprintf("%s:%s%s\r\n", act.HeaderName, maybeSpace, headerValue(act.HeaderValue))
 			f := &field{
 				key:       textproto.CanonicalMIMEHeaderKey(act.HeaderName),
 				changeIdx: -1,
@@ -389,7 +389,7 @@ func (s *Session) Data(r io.Reader) error {
 			if len(act.HeaderValue) == 0 || (act.HeaderValue[0] != ' ' && act.HeaderValue[0] != '\t') {
 				maybeSpace = " "
 			}
-			raw := fmt.Sprintf("%s:%s%s\r\n", act.HeaderName, maybeSpace, act.HeaderValue)
+			raw := fmt.Sprintf("%s:%s%s\r\n", act.HeaderName, maybeSpace, headerValue(act.HeaderValue))
 			key := textproto.CanonicalMIMEHeaderKey(act.HeaderName)
 			for _, f := range headers {
 				if f.key == key && f.changeIdx == int(act.HeaderIndex) {
@@ -450,6 +450,19 @@ type field struct {
 	key       string
 	changeIdx int
 	raw       []byte
+}
+
+func headerValue(s string) []byte {
+	in := []byte(s)
+	out := make([]byte, 0, len(in))
+	l := len(in)
+	for i := 0; i < l; i++ {
+		out = append(out, in[i])
+		if in[i] == '\n' && i+1 < l && (in[i+1] != ' ' && in[i+1] != '\t') {
+			out = append(out, '\t')
+		}
+	}
+	return out
 }
 
 func splitHeaders(headerBytes []byte) (fields []*field) {

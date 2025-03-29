@@ -16,23 +16,30 @@ var errCloseSession = errors.New("stop current milter processing")
 
 // serverSession keeps session state during MTA communication
 type serverSession struct {
-	server      *Server
-	version     uint32
-	actions     OptAction
-	protocol    OptProtocol
-	maxDataSize DataSize
-	conn        net.Conn
-	macros      *macrosStages
-	backend     Milter
+	server       *Server
+	version      uint32
+	actions      OptAction
+	protocol     OptProtocol
+	maxDataSize  DataSize
+	conn         net.Conn
+	macros       *macrosStages
+	backend      Milter
+	shuttingDown func() bool
 }
 
 // readPacket reads incoming milter packet
 func (m *serverSession) readPacket() (*wire.Message, error) {
+	if m.conn == nil {
+		return nil, errCloseSession
+	}
 	return wire.ReadPacket(m.conn, 0)
 }
 
 // writePacket sends a milter response packet to socket stream
 func (m *serverSession) writePacket(msg *wire.Message) error {
+	if m.conn == nil {
+		return errCloseSession
+	}
 	return wire.WritePacket(m.conn, msg, 0)
 }
 
@@ -341,7 +348,7 @@ func (m *serverSession) HandleMilterCommands() {
 			m.backend = nil
 		}
 		if m.conn != nil {
-			if err := m.conn.Close(); err != nil && err != io.EOF {
+			if err := m.conn.Close(); err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, errCloseSession) {
 				LogWarning("Error closing connection: %v", err)
 			}
 		}
@@ -350,19 +357,23 @@ func (m *serverSession) HandleMilterCommands() {
 	// first do the negotiation
 	msg, err := m.readPacket()
 	if err != nil {
-		if err != io.EOF {
+		if !errors.Is(err, io.EOF) && !errors.Is(err, errCloseSession) {
 			LogWarning("Error reading milter command: %v", err)
 		}
 		return
 	}
 	resp, err := m.negotiate(msg, m.server.options.maxVersion, m.server.options.actions, m.server.options.protocol, m.server.options.negotiationCallback, m.server.options.macrosByStage, 0)
 	if err != nil {
-		LogWarning("Error negotiating: %v", err)
+		if !errors.Is(err, errCloseSession) {
+			LogWarning("Error negotiating: %v", err)
+		}
 		return
 	}
 	m.newBackend()
 	if err = m.writePacket(resp.Response()); err != nil {
-		LogWarning("Error writing packet: %v", err)
+		if !errors.Is(err, errCloseSession) {
+			LogWarning("Error writing packet: %v", err)
+		}
 		return
 	}
 
@@ -370,7 +381,7 @@ func (m *serverSession) HandleMilterCommands() {
 	for {
 		msg, err := m.readPacket()
 		if err != nil {
-			if err != io.EOF {
+			if !errors.Is(err, io.EOF) && !errors.Is(err, errCloseSession) {
 				LogWarning("Error reading milter command: %v", err)
 			}
 			return
@@ -395,11 +406,17 @@ func (m *serverSession) HandleMilterCommands() {
 
 		// send back response message
 		if err = m.writePacket(resp.Response()); err != nil {
-			LogWarning("Error writing packet: %v", err)
+			if !errors.Is(err, errCloseSession) {
+				LogWarning("Error writing packet: %v", err)
+			}
 			return
 		}
 
 		if !resp.Continue() {
+			// gracefully exit after we made a decision when the server is shutting down
+			if m.shuttingDown() {
+				return
+			}
 			// prepare backend for next message
 			m.newBackend()
 			m.macros.DelStageAndAbove(StageMail)

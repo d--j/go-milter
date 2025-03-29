@@ -129,7 +129,9 @@ func Test_milterSession_negotiate(t *testing.T) {
 		t.Run(tt_.name, func(t *testing.T) {
 			tt := tt_
 			t.Parallel()
-			m := &serverSession{}
+			m := &serverSession{shuttingDown: func() bool {
+				return false
+			}}
 			milterVersion := tt.fields.milterVersion
 			if milterVersion == 0 {
 				milterVersion = MaxServerProtocolVersion
@@ -530,6 +532,9 @@ func Test_milterSession_Process(t *testing.T) {
 				protocol: tt.fields.protocol,
 				macros:   newMacroStages(),
 				backend:  tt.fields.backend,
+				shuttingDown: func() bool {
+					return false
+				},
 			}
 			gotR, err := m.Process(tt.msg)
 			if (err != nil) != tt.wantErr {

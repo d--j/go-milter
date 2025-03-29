@@ -1,5 +1,14 @@
 package mailfilter
 
+type options struct {
+	decisionAt    DecisionAt
+	errorHandling ErrorHandling
+	body          *bodyOption
+	header        *headerOption
+}
+
+type Option func(opt *options)
+
 // DecisionAt defines when the filter decision is made.
 type DecisionAt int
 
@@ -24,6 +33,14 @@ const (
 	DecisionAtEndOfMessage
 )
 
+// WithDecisionAt sets the decision point for the [MailFilter].
+// The default is [DecisionAtEndOfMessage].
+func WithDecisionAt(decisionAt DecisionAt) Option {
+	return func(opt *options) {
+		opt.decisionAt = decisionAt
+	}
+}
+
 type ErrorHandling int
 
 const (
@@ -37,22 +54,6 @@ const (
 	RejectWhenError
 )
 
-type options struct {
-	decisionAt    DecisionAt
-	errorHandling ErrorHandling
-	skipBody      bool
-}
-
-type Option func(opt *options)
-
-// WithDecisionAt sets the decision point for the [MailFilter].
-// The default is [DecisionAtEndOfMessage].
-func WithDecisionAt(decisionAt DecisionAt) Option {
-	return func(opt *options) {
-		opt.decisionAt = decisionAt
-	}
-}
-
 // WithErrorHandling sets the error handling for the [MailFilter].
 // The default is [TempFailWhenError].
 func WithErrorHandling(errorHandling ErrorHandling) Option {
@@ -61,9 +62,64 @@ func WithErrorHandling(errorHandling ErrorHandling) Option {
 	}
 }
 
+type MaxAction int
+
+const (
+	// RejectMessageWhenTooBig rejects the message with "552 5.3.4 Maximum allowed body size of %d bytes exceeded." or
+	// "552 5.3.4 Maximum allowed header lines (%d) exceeded."
+	RejectMessageWhenTooBig MaxAction = iota
+	// ClearWhenTooBig will allow the message to pass, but Trx.Body or Trx.Headers will be empty.
+	ClearWhenTooBig
+	// TruncateWhenTooBig will allow the message to pass,
+	// but Trx.Body will be truncated to only the first maxSize bytes
+	// or Trx.Headers will be truncated to only the first maxHeaders headers.
+	TruncateWhenTooBig
+)
+
+type headerOption struct {
+	Max       uint32
+	MaxAction MaxAction
+}
+
+// WithHeader sets the maximum number of headers the [MailFilter] will collect.
+// If the number of headers is bigger than maxHeaders, the milter will use maxAction to determine what happens.
+//
+// If you do not call this function, the default values are:
+//   - maxHeaders: 512
+//   - maxAction: TruncateWhenTooBig
+func WithHeader(maxHeaders uint32, maxAction MaxAction) Option {
+	return func(opt *options) {
+		opt.header = &headerOption{Max: maxHeaders, MaxAction: maxAction}
+	}
+}
+
+type bodyOption struct {
+	Skip      bool
+	MaxMem    int
+	MaxSize   int64
+	MaxAction MaxAction
+}
+
 // WithoutBody configures the [MailFilter] to not request and collect the mail body.
+// Use this option when you do not need Trx.Body or Trx.Data in your decision function.
 func WithoutBody() Option {
 	return func(opt *options) {
-		opt.skipBody = true
+		opt.body = &bodyOption{Skip: true}
+	}
+}
+
+// WithBody configures the [MailFilter] body collection.
+// When the message body is bigger than maxMem bytes, the body will be written to a temporary file.
+// Otherwise, it will be kept in memory.
+// If maxSize is bigger than 0, the milter will stop collecting the body after maxSize bytes
+// and use maxAction to determine what happens.
+//
+// If you do not call this function, the default values are:
+//   - maxMem: 200 KiB
+//   - maxSize: 100 MiB
+//   - maxAction: TruncateWhenTooBig
+func WithBody(maxMem int, maxSize int64, maxAction MaxAction) Option {
+	return func(opt *options) {
+		opt.body = &bodyOption{MaxMem: maxMem, MaxSize: maxSize, MaxAction: maxAction}
 	}
 }

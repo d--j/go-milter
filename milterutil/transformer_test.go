@@ -3,6 +3,7 @@ package milterutil
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net/textproto"
@@ -249,7 +250,7 @@ func TestMaximumLineLengthTransformer(t *testing.T) {
 	t.Run("enforce minimum", func(t *testing.T) {
 		t.Parallel()
 		_, err := doTransformation(&MaximumLineLengthTransformer{MaximumLength: 1}, []string{""})
-		if err != errWrongMaximumLineLength {
+		if !errors.Is(err, errWrongMaximumLineLength) {
 			t.Fatalf("err got %s, expected %s", err, errWrongMaximumLineLength)
 		}
 	})
@@ -264,24 +265,6 @@ func TestMaximumLineLengthTransformer(t *testing.T) {
 			t.Fatalf("expected %q, got %q", expected, string(output))
 		}
 	})
-}
-
-func TestCrLfToLf(t *testing.T) {
-	tests := []struct {
-		name string
-		arg  string
-		want string
-	}{
-		{"empty", "", ""},
-		{"simple", "\r\n", "\n"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := CrLfToLf(tt.arg); got != tt.want {
-				t.Errorf("CrLfToLf() = %v, want %v", got, tt.want)
-			}
-		})
-	}
 }
 
 func FuzzCrLfToLfTransformer_Transform(f *testing.F) {
@@ -537,4 +520,81 @@ func FuzzSMTPReplyTransformer_Transform(f *testing.F) {
 			t.Fatalf("not valid SMTP response: %q", output)
 		}
 	})
+}
+
+func TestNewlineToSpaceTransformer(t *testing.T) {
+	// transform.Transformer uses initial dst buffer size of 4096 bytes
+	stuffing := strings.Repeat("1234567890", 4090/10)
+	t.Parallel()
+	doTransformerTest(t, func() transform.Transformer {
+		return &NewlineToSpaceTransformer{}
+	}, nil, transformerTestCases{
+		{[]string{""}, ""},
+		{[]string{"\n"}, " "},
+		{[]string{"\r"}, " "},
+		{[]string{"\r\n"}, " "},
+		{[]string{"\r\r\n"}, "  "},
+		{[]string{"\r\n\r"}, "  "},
+		{[]string{"\r\n\r\n"}, "  "},
+		{[]string{"line1\r\nline2\r\n"}, "line1 line2 "},
+		{[]string{"\r", "\n"}, " "},
+		{[]string{"\r\r", "\n"}, "  "},
+		{[]string{stuffing + "123456\r", "\n"}, stuffing + "123456 "},
+		{[]string{"aaaaaaaaaaaaaaaaaaaaaaaa\r\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\r\nbbbbbbb"}, "aaaaaaaaaaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbb"},
+	})
+}
+
+func TestNulToSpaceTransformer(t *testing.T) {
+	// transform.Transformer uses initial dst buffer size of 4096 bytes
+	stuffing := strings.Repeat("1234567890", 4090/10)
+	t.Parallel()
+	doTransformerTest(t, func() transform.Transformer {
+		return &NulToSpTransformer{}
+	}, nil, transformerTestCases{
+		{[]string{""}, ""},
+		{[]string{"\u0000"}, " "},
+		{[]string{"\u0000\u0000"}, "  "},
+		{[]string{"\u0000", "\u0000"}, "  "},
+		{[]string{stuffing + "123456\u0000", "\u0000"}, stuffing + "123456  "},
+	})
+}
+
+func TestCrLfToLf(t *testing.T) {
+	tests := []struct {
+		name string
+		arg  string
+		want string
+	}{
+		{"empty", "", ""},
+		{"simple", "\r\n", "\n"},
+		{"with-zero", "\r\n\u0000", "\n "},
+		{"with-zero2", "\u0000\r\n\u0000", " \n "},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := CrLfToLf(tt.arg); got != tt.want {
+				t.Errorf("CrLfToLf() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNewlineToSpace(t *testing.T) {
+	tests := []struct {
+		name string
+		arg  string
+		want string
+	}{
+		{"empty", "", ""},
+		{"simple", "\r\n", " "},
+		{"with-zero", "\r\n\u0000", "  "},
+		{"with-zero2", "\u0000\r\n\u0000", "   "},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := NewlineToSpace(tt.arg); got != tt.want {
+				t.Errorf("NewlineToSpace() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }

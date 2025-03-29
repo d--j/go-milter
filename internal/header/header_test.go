@@ -106,8 +106,8 @@ func TestHeaderFields_Del(t *testing.T) {
 		fields fields
 		want   *Field
 	}{
-		{"First", fields{0, testHeader()}, &Field{0, "From", []byte("From:")}},
-		{"Third", fields{2, testHeader()}, &Field{2, "Subject", []byte("subject:")}},
+		{"First", fields{0, testHeader()}, &Field{0, "From", []byte("From:"), true}},
+		{"Third", fields{2, testHeader()}, &Field{2, "Subject", []byte("subject:"), true}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -268,9 +268,9 @@ func TestHeaderFields_InsertAfter(t *testing.T) {
 		value string
 	}
 	addOne := []args{{"Test", "one"}}
-	expectOne := []*Field{{-1, "Test", []byte("Test: one")}}
+	expectOne := []*Field{{-1, "Test", []byte("Test: one"), false}}
 	addTwo := []args{{"Test", "one"}, {"Test", "two"}}
-	expectTwo := []*Field{{-1, "Test", []byte("Test: one")}, {-1, "Test", []byte("Test: two")}}
+	expectTwo := []*Field{{-1, "Test", []byte("Test: one"), false}, {-1, "Test", []byte("Test: two"), false}}
 	tests := []struct {
 		name     string
 		fields   fields
@@ -322,9 +322,9 @@ func TestHeaderFields_InsertBefore(t *testing.T) {
 		value string
 	}
 	addOne := []args{{"Test", "one"}}
-	expectOne := []*Field{{-1, "Test", []byte("Test: one")}}
+	expectOne := []*Field{{-1, "Test", []byte("Test: one"), false}}
 	addTwo := []args{{"Test", "one"}, {"Test", "two"}}
-	expectTwo := []*Field{{-1, "Test", []byte("Test: one")}, {-1, "Test", []byte("Test: two")}}
+	expectTwo := []*Field{{-1, "Test", []byte("Test: one"), false}, {-1, "Test", []byte("Test: two"), false}}
 	tests := []struct {
 		name     string
 		fields   fields
@@ -500,7 +500,7 @@ func TestHeaderFields_Replace(t *testing.T) {
 		args   args
 		want   []*Field
 	}{
-		{"works", fields{0, testHeader()}, args{"new", "header"}, append([]*Field{{0, "New", []byte("new: header")}}, testHeader().fields[1:]...)},
+		{"works", fields{0, testHeader()}, args{"new", "header"}, append([]*Field{{0, "New", []byte("new: header"), false}}, testHeader().fields[1:]...)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -532,8 +532,8 @@ func TestHeaderFields_Set(t *testing.T) {
 		args   args
 		want   *Field
 	}{
-		{"First", fields{0, testHeader()}, args{"set"}, &Field{0, "From", []byte("From: set")}},
-		{"Third", fields{2, testHeader()}, args{"\tset"}, &Field{2, "Subject", []byte("subject:\tset")}},
+		{"First", fields{0, testHeader()}, args{"set"}, &Field{0, "From", []byte("From: set"), false}},
+		{"Third", fields{2, testHeader()}, args{"\tset"}, &Field{2, "Subject", []byte("subject:\tset"), false}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -565,8 +565,8 @@ func TestHeaderFields_SetAddressList(t *testing.T) {
 		args   args
 		want   *Field
 	}{
-		{"One", fields{0, testHeader()}, args{[]*mail.Address{&nobody}}, &Field{0, "From", []byte("From: <nobody@localhost>")}},
-		{"Two", fields{1, testHeader()}, args{[]*mail.Address{&nobody, &root}}, &Field{1, "To", []byte("To: <nobody@localhost>,\r\n <root@localhost>")}},
+		{"One", fields{0, testHeader()}, args{[]*mail.Address{&nobody}}, &Field{0, "From", []byte("From: <nobody@localhost>"), false}},
+		{"Two", fields{1, testHeader()}, args{[]*mail.Address{&nobody, &root}}, &Field{1, "To", []byte("To: <nobody@localhost>,\r\n <root@localhost>"), false}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -578,7 +578,7 @@ func TestHeaderFields_SetAddressList(t *testing.T) {
 			f.SetAddressList(tt.args.value)
 			got := f.h.fields[f.index()]
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("SetAddressList() = %q, want %q", got, tt.want)
+				t.Errorf("SetAddressList() = %+v, want %+v", got, tt.want)
 			}
 		})
 	}
@@ -598,8 +598,8 @@ func TestHeaderFields_SetText(t *testing.T) {
 		args   args
 		want   *Field
 	}{
-		{"Set", fields{0, testHeader()}, args{"set"}, &Field{0, "From", []byte("From: set")}},
-		{"UTF-8", fields{2, testHeader()}, args{"🔴"}, &Field{2, "Subject", []byte("subject: =?utf-8?q?=F0=9F=94=B4?=")}},
+		{"Set", fields{0, testHeader()}, args{"set"}, &Field{0, "From", []byte("From: set"), false}},
+		{"UTF-8", fields{2, testHeader()}, args{"🔴"}, &Field{2, "Subject", []byte("subject: =?utf-8?q?=F0=9F=94=B4?="), false}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -628,7 +628,7 @@ func TestHeader_Add(t *testing.T) {
 		args   args
 		want   []*Field
 	}{
-		{"works", testHeader().fields, args{"key", "value"}, append(testHeader().fields, &Field{-1, "Key", []byte("key: value")})},
+		{"works", testHeader().fields, args{"key", "value"}, append(testHeader().fields, &Field{-1, "Key", []byte("key: value"), false})},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -743,6 +743,12 @@ func TestHeader_Fields(t *testing.T) {
 	if got != expect {
 		t.Errorf("got %q, expect %q", got, expect)
 	}
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("Expected panic")
+		}
+	}()
+	fields2.Value()
 }
 
 func TestHeader_Value(t *testing.T) {
@@ -899,8 +905,8 @@ func TestHeader_Set(t *testing.T) {
 		args   args
 		want   []*Field
 	}{
-		{"found", testHeader().fields, args{"suBJect", "value"}, append(testHeader().fields[:2], append([]*Field{{2, "Subject", []byte("subject: value")}}, testHeader().fields[3:]...)...)},
-		{"not-found", testHeader().fields, args{"x-spam", "value"}, append(testHeader().fields, &Field{-1, "X-Spam", []byte("x-spam: value")})},
+		{"found", testHeader().fields, args{"suBJect", "value"}, append(testHeader().fields[:2], append([]*Field{{2, "Subject", []byte("subject: value"), false}}, testHeader().fields[3:]...)...)},
+		{"not-found", testHeader().fields, args{"x-spam", "value"}, append(testHeader().fields, &Field{-1, "X-Spam", []byte("x-spam: value"), false})},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -927,7 +933,7 @@ func TestHeader_SetAddressList(t *testing.T) {
 		args   args
 		want   []*Field
 	}{
-		{"works", testHeader().fields, args{"x-to", []*mail.Address{&root}}, append(testHeader().fields, &Field{-1, "X-To", []byte("x-to: <root@localhost>")})},
+		{"works", testHeader().fields, args{"x-to", []*mail.Address{&root}}, append(testHeader().fields, &Field{-1, "X-To", []byte("x-to: <root@localhost>"), false})},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -953,8 +959,8 @@ func TestHeader_SetDate(t *testing.T) {
 		args   args
 		want   []*Field
 	}{
-		{"works", testHeader().fields, args{time.Date(1980, time.January, 1, 12, 0, 0, 0, time.UTC)}, append(testHeader().fields[:3], &Field{3, "Date", []byte("DATE: Tue, 01 Jan 1980 12:00:00 +0000")})},
-		{"zero-ok", testHeader().fields, args{time.Time{}}, append(testHeader().fields[:3], &Field{3, "Date", []byte("DATE:")})},
+		{"works", testHeader().fields, args{time.Date(1980, time.January, 1, 12, 0, 0, 0, time.UTC)}, append(testHeader().fields[:3], &Field{3, "Date", []byte("DATE: Tue, 01 Jan 1980 12:00:00 +0000"), false})},
+		{"zero-ok", testHeader().fields, args{time.Time{}}, append(testHeader().fields[:3], &Field{3, "Date", []byte("DATE:"), true})},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -980,8 +986,8 @@ func TestHeader_SetSubject(t *testing.T) {
 		args   args
 		want   []*Field
 	}{
-		{"works", testHeader().fields, args{"set"}, append(testHeader().fields[:2], &Field{2, "Subject", []byte("subject: set")}, testHeader().fields[3])},
-		{"zero-ok", testHeader().fields, args{""}, append(testHeader().fields[:2], &Field{2, "Subject", []byte("subject:")}, testHeader().fields[3])},
+		{"works", testHeader().fields, args{"set"}, append(testHeader().fields[:2], &Field{2, "Subject", []byte("subject: set"), false}, testHeader().fields[3])},
+		{"zero-ok", testHeader().fields, args{""}, append(testHeader().fields[:2], &Field{2, "Subject", []byte("subject:"), true}, testHeader().fields[3])},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1008,9 +1014,9 @@ func TestHeader_SetText(t *testing.T) {
 		args   args
 		want   []*Field
 	}{
-		{"works", testHeader().fields, args{"SubJect", "set"}, append(testHeader().fields[:2], &Field{2, "Subject", []byte("subject: set")}, testHeader().fields[3])},
-		{"zero-ok", testHeader().fields, args{"Subject", ""}, append(testHeader().fields[:2], &Field{2, "Subject", []byte("subject:")}, testHeader().fields[3])},
-		{"add", testHeader().fields, args{"x-red", "🔴"}, append(testHeader().fields, &Field{-1, "X-Red", []byte("x-red: =?utf-8?q?=F0=9F=94=B4?=")})},
+		{"works", testHeader().fields, args{"SubJect", "set"}, append(testHeader().fields[:2], &Field{2, "Subject", []byte("subject: set"), false}, testHeader().fields[3])},
+		{"zero-ok", testHeader().fields, args{"Subject", ""}, append(testHeader().fields[:2], &Field{2, "Subject", []byte("subject:"), true}, testHeader().fields[3])},
+		{"add", testHeader().fields, args{"x-red", "🔴"}, append(testHeader().fields, &Field{-1, "X-Red", []byte("x-red: =?utf-8?q?=F0=9F=94=B4?="), false})},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1080,7 +1086,7 @@ func TestHeader_addRaw(t *testing.T) {
 }
 
 func TestHeader_copy(t *testing.T) {
-	h := Header{fields: []*Field{{0, "Test", []byte("Test:")}}}
+	h := Header{fields: []*Field{{0, "Test", []byte("Test:"), false}}}
 	h2 := h.Copy()
 	h.fields[0].CanonicalKey = "Changed"
 	if len(h2.fields) != len(h.fields) {
@@ -1116,30 +1122,76 @@ func Test_getRaw(t *testing.T) {
 	}
 }
 
-func Test_headerField_deleted(t *testing.T) {
-	type fields struct {
-		canonicalKey string
-		raw          string
+func Test_headerField_Deleted(t *testing.T) {
+	f := &Field{
+		CanonicalKey: "To",
+		Raw:          []byte("To: <root@localhost>"),
+		deleted:      true,
 	}
-	tests := []struct {
-		name   string
-		fields fields
-		want   bool
-	}{
-		{"deleted", fields{"To", "To:"}, true},
-		{"not deleted", fields{"To", "To: <root@localhost>"}, false},
+	if got := f.Deleted(); got != true {
+		t.Errorf("%v.Deleted() = false, want true", f)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			f := &Field{
-				CanonicalKey: tt.fields.canonicalKey,
-				Raw:          []byte(tt.fields.raw),
+	f = &Field{
+		CanonicalKey: "To",
+		Raw:          []byte("To:"),
+		deleted:      true,
+	}
+	if got := f.Deleted(); got != true {
+		t.Errorf("%v.Deleted() = false, want true", f)
+	}
+	f = &Field{
+		CanonicalKey: "To",
+		Raw:          []byte("To: <root@localhost>"),
+		deleted:      false,
+	}
+	if got := f.Deleted(); got != false {
+		t.Errorf("%v.Deleted() = true, want false", f)
+	}
+	f = &Field{
+		CanonicalKey: "To",
+		Raw:          []byte("To:"),
+		deleted:      false,
+	}
+	if got := f.Deleted(); got != false {
+		t.Errorf("%v.Deleted() = true, want false", f)
+	}
+
+	hdrs := testHeader()
+	fields := hdrs.Fields()
+	for fields.Next() {
+		if fields.CanonicalKey() == "Subject" {
+			fields.Del()
+			break
+		}
+	}
+	found := false
+	fields = hdrs.Fields()
+	for fields.Next() {
+		if fields.CanonicalKey() == "Subject" {
+			if !fields.IsDeleted() {
+				t.Errorf("Subject should be deleted")
 			}
-			if got := f.Deleted(); got != tt.want {
-				t.Errorf("deleted() = %v, want %v", got, tt.want)
-			}
-		})
+			found = true
+			break
+		}
 	}
+	if !found {
+		t.Errorf("Subject not found")
+	}
+	hdrs = testHeader()
+	fields = hdrs.Fields()
+	for fields.Next() {
+		if fields.CanonicalKey() == "Subject" {
+			fields.Del()
+			break
+		}
+	}
+	hdrs.SetText("Subject", "undeleted")
+	expected := "From: <root@localhost>\r\nTo:  <root@localhost>, <nobody@localhost>\r\nsubject: undeleted\r\nDATE:\tWed, 01 Mar 2023 15:47:33 +0100\r\n\r\n"
+	if got := outputFields(hdrs.fields); got != expected {
+		t.Errorf("got %q, expect %q", got, expected)
+	}
+
 }
 
 func Test_headerField_key(t *testing.T) {
@@ -1203,6 +1255,7 @@ func TestNew(t *testing.T) {
 	}{
 		{"empty", []byte("  totally bogus 💣 header data "), nil, true},
 		{"works", []byte("Subject: test\r\n"), &Header{fields: []*Field{{Index: 0, CanonicalKey: "Subject", Raw: []byte("Subject: test")}}}, false},
+		{"brokenEncodingOk", []byte("Content-Type: text/plain; charset=bogus\r\nSubject: test\r\n"), &Header{fields: []*Field{{Index: 0, CanonicalKey: "Content-Type", Raw: []byte("Content-Type: text/plain; charset=bogus")}, {Index: 1, CanonicalKey: "Subject", Raw: []byte("Subject: test")}}}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1213,6 +1266,30 @@ func TestNew(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("New() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHeader_Len(t *testing.T) {
+	tests := []struct {
+		name   string
+		fields []*Field
+		want   int
+	}{
+		{"nil", nil, 0},
+		{"empty", []*Field{}, 0},
+		{"one", []*Field{{0, "Test", []byte("Test:"), false}}, 1},
+		{"one-del", []*Field{{0, "Test", []byte("Test:"), true}}, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := &Header{
+				fields: tt.fields,
+				helper: newHelper(),
+			}
+			if got := h.Len(); got != tt.want {
+				t.Errorf("Len() = %v, want %v", got, tt.want)
 			}
 		})
 	}

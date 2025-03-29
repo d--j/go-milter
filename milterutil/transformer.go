@@ -3,13 +3,14 @@ package milterutil
 import (
 	"errors"
 	"fmt"
-	"unicode/utf8"
-
 	"golang.org/x/text/transform"
+	"unicode/utf8"
 )
 
 const cr = '\r'
 const lf = '\n'
+const sp = ' '
+const nul = '\000'
 
 // CrLfToLfTransformer is a [transform.Transformer] that replaces all CR LF and single CR in src to LF in dst.
 type CrLfToLfTransformer struct {
@@ -52,17 +53,6 @@ func (t *CrLfToLfTransformer) Reset() {
 }
 
 var _ transform.Transformer = (*CrLfToLfTransformer)(nil)
-
-// CrLfToLf is a helper that uses [CrLfToLfTransformer] to replace all line endings to only LF.
-//
-// postfix wants LF lines endings for header values. Using CRLF results in double CR sequences.
-func CrLfToLf(s string) string {
-	dst, _, err := transform.String(&CrLfToLfTransformer{}, s)
-	if err != nil {
-		panic(err)
-	}
-	return dst
-}
 
 // CrLfCanonicalizationTransformer is a [transform.Transformer] that replaces line endings in src with CR LF line endings in dst.
 type CrLfCanonicalizationTransformer struct {
@@ -252,7 +242,7 @@ func FindEnhancedErrorCodeEnd(src []byte, code uint16) int {
 				if src[i] == '0' && i == subject+1 && (src[i+1] >= '0' && src[i+1] <= '9') {
 					return -1
 				}
-				// We expect the enhanced error code to be followed by a space
+				// We expect the enhanced error code to be followed by a sp
 				// Looks like RFC 2034 does not enforce this, but we do
 				if src[i+1] == ' ' {
 					return i + 2
@@ -404,3 +394,88 @@ func (t *MaximumLineLengthTransformer) Reset() {
 }
 
 var _ transform.Transformer = (*MaximumLineLengthTransformer)(nil)
+
+// NewlineToSpaceTransformer is a [transform.Transformer] that replaces all CR LF and single CR in src to ' ' in dst.
+// It is UTF-8 safe because UTF-8 does not allow ASCII bytes in the middle of a rune.
+type NewlineToSpaceTransformer struct {
+	prevCR bool
+}
+
+func (t *NewlineToSpaceTransformer) Transform(dst, src []byte, atEOF bool) (nDst, nSrc int, err error) {
+	for nDst < len(dst) && nSrc < len(src) {
+		c := src[nSrc]
+		if c == lf {
+			if t.prevCR {
+				nSrc++
+				t.prevCR = false
+				continue
+			}
+			c = sp
+		}
+		t.prevCR = c == cr
+		if t.prevCR {
+			c = sp
+		}
+		dst[nDst] = c
+		nDst++
+		nSrc++
+	}
+	if nSrc < len(src) { // should never happen since we do not add data, but let's be safe
+		err = transform.ErrShortDst
+	}
+	// if the last char in src is cr then there might be a lf coming
+	if err == nil && !atEOF && len(src) > 0 && src[len(src)-1] == cr {
+		err = transform.ErrShortSrc
+		nSrc--
+		nDst--
+		return
+	}
+	return
+}
+
+func (t *NewlineToSpaceTransformer) Reset() {
+	t.prevCR = false
+}
+
+var _ transform.Transformer = (*NewlineToSpaceTransformer)(nil)
+
+// NulToSpTransformer is a [transform.Transformer] that replaces all zero bytes to ' ' in dst.
+// It is UTF-8 safe because UTF-8 does not allow zero bytes in the middle of a rune.
+type NulToSpTransformer struct {
+	transform.NopResetter
+}
+
+func (t *NulToSpTransformer) Transform(dst, src []byte, _ bool) (nDst, nSrc int, err error) {
+	for nDst < len(dst) && nSrc < len(src) {
+		c := src[nSrc]
+		if c == nul {
+			dst[nDst] = sp
+		} else {
+			dst[nDst] = c
+		}
+		nDst++
+		nSrc++
+	}
+	return
+}
+
+var _ transform.Transformer = (*NulToSpTransformer)(nil)
+
+// CrLfToLf is a helper that uses [CrLfToLfTransformer] to replace all line endings to only LF.
+// It also replaces NUL bytes to SP.
+//
+// postfix wants LF lines endings for header values. Using CRLF results in double CR sequences.
+func CrLfToLf(s string) string {
+	t := transform.Chain(&NulToSpTransformer{}, &CrLfToLfTransformer{})
+	dst, _, _ := transform.String(t, s)
+	return dst
+}
+
+// NewlineToSpace replaces all CR LF, LF, CR and NUL in s with SP.
+//
+// Sendmail does not like newlines in quarantine reasons.
+func NewlineToSpace(s string) string {
+	t := transform.Chain(&NulToSpTransformer{}, &NewlineToSpaceTransformer{})
+	dst, _, _ := transform.String(t, s)
+	return dst
+}

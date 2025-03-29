@@ -2,7 +2,10 @@ package mailfilter
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"github.com/d--j/go-milter/internal/body"
+	"github.com/d--j/go-milter/internal/header"
 	"strings"
 	"time"
 
@@ -16,6 +19,8 @@ type backend struct {
 	leadingSpace bool
 	decision     DecisionModificationFunc
 	transaction  *transaction
+	headerCount  uint64
+	bodySize     int64
 }
 
 func (b *backend) decideOrContinue(stage DecisionAt, m *milter.Modifier) (*milter.Response, error) {
@@ -143,23 +148,31 @@ func (b *backend) Header(name string, value string, _ *milter.Modifier) (*milter
 	if b.transaction.hasDecision {
 		return milter.RespSkip, nil
 	}
-	name = strings.Trim(name, " \t\r\n")
-	if b.leadingSpace {
-		// the MTA did not actually *not* swallow the space, so we add a space because it is required
-		if len(value) > 0 && value[0] != ' ' && value[0] != '\t' {
-			value = " " + value
+	b.headerCount++
+	if b.headerCount > uint64(b.opts.header.Max) {
+		switch b.opts.header.MaxAction {
+		case RejectMessageWhenTooBig:
+			return milter.RejectWithCodeAndReason(552, fmt.Sprintf("5.3.4 Maximum allowed header lines (%d) exceeded.", b.opts.header.Max))
+		case ClearWhenTooBig:
+			if b.transaction.origHeaders != nil && b.transaction.origHeaders.Len() > 0 {
+				b.transaction.origHeaders = &header.Header{}
+			}
+			return milter.RespContinue, nil
+		default:
+			return milter.RespContinue, nil
 		}
-	} else {
+	}
+	name = strings.Trim(name, " \t\r\n")
+	// the MTA told us in the negotiation packet that it swallows the space after the colon.
+	if !b.leadingSpace {
 		// we only add a space when the first character is not a tab - sendmail swallows the first space
+		// we add it back to re-construct the raw header as it was sent by the client
 		if len(value) == 0 || value[0] != '\t' {
 			value = " " + value
 		}
 	}
-	if value == "" {
-		value = " "
-	}
 	if name == "" {
-		milter.LogWarning("skip header because we got an empty  name")
+		milter.LogWarning("skip header because we got an empty name")
 	} else {
 		b.transaction.addHeader(name, []byte(fmt.Sprintf("%s:%s", name, value)))
 	}
@@ -174,11 +187,14 @@ func (b *backend) Headers(m *milter.Modifier) (*milter.Response, error) {
 }
 
 func (b *backend) BodyChunk(chunk []byte, _ *milter.Modifier) (*milter.Response, error) {
-	if b.transaction.hasDecision || b.opts.skipBody {
+	if !b.transaction.wantsBodyChunks() {
 		return milter.RespSkip, nil
 	}
 	err := b.transaction.addBodyChunk(chunk)
 	if err != nil {
+		if errors.Is(err, body.ErrBodyTooLarge) && b.opts.body.MaxAction == RejectMessageWhenTooBig {
+			return milter.RejectWithCodeAndReason(552, fmt.Sprintf("5.3.4 Maximum allowed body size of %d bytes exceeded.", b.opts.body.MaxSize))
+		}
 		return b.error(err)
 	}
 	return milter.RespContinue, nil
@@ -226,7 +242,8 @@ func (b *backend) Cleanup() {
 	if b.transaction != nil {
 		b.transaction.cleanup()
 	}
-	b.transaction = &transaction{}
+	b.headerCount = 0
+	b.transaction = &transaction{bodyOpt: *b.opts.body}
 }
 
 var _ milter.Milter = (*backend)(nil)
