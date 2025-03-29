@@ -1,8 +1,12 @@
 package milter
 
 import (
+	"context"
 	"errors"
+	"math/rand"
 	"net"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -152,9 +156,12 @@ func (NoOpMilter) Cleanup() {
 
 // Server is a milter server.
 type Server struct {
-	options   options
-	listeners []net.Listener
-	closed    bool
+	options        options
+	listeners      map[*net.Listener]struct{}
+	listenerGroup  sync.WaitGroup
+	activeSessions map[*serverSession]struct{}
+	mu             sync.Mutex
+	inShutdown     atomic.Bool
 }
 
 // NewServer creates a new milter server.
@@ -199,52 +206,172 @@ func NewServer(opts ...Option) *Server {
 	return &Server{options: options}
 }
 
+// onceCloseListener wraps a net.Listener, protecting it from multiple Close calls.
+type onceCloseListener struct {
+	net.Listener
+	once     sync.Once
+	closeErr error
+}
+
+func (oc *onceCloseListener) Close() error {
+	oc.once.Do(oc.close)
+	return oc.closeErr
+}
+
+func (oc *onceCloseListener) close() { oc.closeErr = oc.Listener.Close() }
+
 // Serve starts the server.
 // You can call this function multiple times to serve on multiple listeners.
+// The server will accept connections until it is closed or shutdown.
+// The function will return ErrServerClosed when the server is closed.
 func (s *Server) Serve(ln net.Listener) error {
-	s.listeners = append(s.listeners, ln)
-	defer func(ln net.Listener, len int) {
-		if s.listeners[len-1] != nil {
-			_ = ln.Close()
-			s.listeners[len-1] = nil
-		}
-	}(ln, len(s.listeners))
+	localLn := &onceCloseListener{Listener: ln}
+	if !s.trackListener(localLn, true) {
+		return ErrServerClosed
+	}
+	defer s.trackListener(localLn, false)
 
 	for {
-		conn, err := ln.Accept()
+		conn, err := localLn.Accept()
 		if err != nil {
-			if s.closed {
-				return ErrServerClosed
+			if s.shuttingDown() {
+				return nil
 			}
 			return err
 		}
-
-		session := serverSession{
-			server:   s,
-			version:  s.options.maxVersion,
-			actions:  s.options.actions,
-			protocol: s.options.protocol,
-			conn:     conn,
-			macros:   newMacroStages(),
-		}
-		go session.HandleMilterCommands()
+		go func(conn net.Conn) {
+			session := serverSession{
+				server:       s,
+				version:      s.options.maxVersion,
+				actions:      s.options.actions,
+				protocol:     s.options.protocol,
+				conn:         conn,
+				macros:       newMacroStages(),
+				shuttingDown: s.shuttingDown,
+			}
+			if !s.trackSession(&session, true) {
+				_ = conn.Close()
+				return
+			}
+			session.HandleMilterCommands()
+			s.trackSession(&session, false)
+		}(conn)
 	}
 }
 
-// Close closes the server and all its listeners.
-// It returns ErrServerClosed if the server is already closed.
-func (s *Server) Close() error {
-	if s.closed {
-		return ErrServerClosed
+// closeListenersLocked closes all listeners.
+// It returns all errors that occurred while closing the listeners.
+func (s *Server) closeListenersLocked() error {
+	var errs []error
+	for ln := range s.listeners {
+		errs = append(errs, (*ln).Close())
 	}
-	s.closed = true
-	var result []error
-	for _, ln := range s.listeners {
-		if ln != nil {
-			if err := ln.Close(); err != nil {
-				result = append(result, err)
-			}
+	s.listeners = nil
+	return errors.Join(errs...)
+}
+
+// closeActiveSessionsLocked forcefully closes all net.Conn objects of active sessions
+func (s *Server) closeActiveSessionsLocked() {
+	for sess := range s.activeSessions {
+		conn := sess.conn
+		sess.conn = nil
+		_ = conn.Close()
+	}
+	s.activeSessions = nil
+}
+
+// Close closes the server and all its listeners.
+func (s *Server) Close() error {
+	s.inShutdown.Store(true)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	err := s.closeListenersLocked()
+	s.mu.Unlock()
+	s.listenerGroup.Wait()
+	s.mu.Lock()
+	s.closeActiveSessionsLocked()
+	return err
+}
+
+func (s *Server) shuttingDown() bool {
+	return s.inShutdown.Load()
+}
+
+const shutdownPollIntervalMax = 500 * time.Millisecond
+
+// Shutdown stops the server gracefully.
+func (s *Server) Shutdown(ctx context.Context) error {
+	s.inShutdown.Store(true)
+	s.mu.Lock()
+	lnerr := s.closeListenersLocked()
+	s.mu.Unlock()
+	s.listenerGroup.Wait()
+
+	pollIntervalBase := time.Millisecond
+	nextPollInterval := func() time.Duration {
+		// Add 10% jitter.
+		interval := pollIntervalBase + time.Duration(rand.Intn(int(pollIntervalBase/10)))
+		// Double and clamp for next time.
+		pollIntervalBase *= 2
+		if pollIntervalBase > shutdownPollIntervalMax {
+			pollIntervalBase = shutdownPollIntervalMax
+		}
+		return interval
+	}
+
+	timer := time.NewTimer(nextPollInterval())
+	defer timer.Stop()
+	for {
+		s.mu.Lock()
+		activeCount := len(s.activeSessions)
+		s.mu.Unlock()
+		if activeCount == 0 {
+			return lnerr
+		}
+		select {
+		case <-ctx.Done():
+			s.mu.Lock()
+			s.closeActiveSessionsLocked()
+			s.mu.Unlock()
+			return ctx.Err()
+		case <-timer.C:
+			timer.Reset(nextPollInterval())
 		}
 	}
-	return errors.Join(result...)
+}
+
+func (s *Server) trackListener(ln net.Listener, add bool) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.listeners == nil {
+		s.listeners = make(map[*net.Listener]struct{})
+	}
+	if add {
+		if s.shuttingDown() {
+			return false
+		}
+		s.listeners[&ln] = struct{}{}
+		s.listenerGroup.Add(1)
+	} else {
+		delete(s.listeners, &ln)
+		s.listenerGroup.Done()
+	}
+	return true
+}
+
+func (s *Server) trackSession(c *serverSession, add bool) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.activeSessions == nil {
+		s.activeSessions = make(map[*serverSession]struct{})
+	}
+	if add {
+		if s.shuttingDown() {
+			return false
+		}
+		s.activeSessions[c] = struct{}{}
+	} else {
+		delete(s.activeSessions, c)
+	}
+	return true
 }

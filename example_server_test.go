@@ -1,9 +1,14 @@
 package milter_test
 
 import (
+	"context"
 	"log"
 	"net"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
+	"time"
 
 	"github.com/d--j/go-milter"
 )
@@ -44,12 +49,23 @@ func ExampleServer() {
 	wgDone.Add(1)
 	go func(socket net.Listener) {
 		if err := server.Serve(socket); err != nil {
-			log.Fatal(err)
+			log.Println(err)
 		}
 		wgDone.Done()
 	}(socket)
 
 	log.Printf("Started milter on %s:%s", socket.Addr().Network(), socket.Addr().String())
+
+	// wait for SIGINT or SIGTERM
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sig
+		log.Printf("Gracefully shutting down milter…")
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		server.Shutdown(ctx)
+	}()
 
 	// quit when milter quits
 	wgDone.Wait()
