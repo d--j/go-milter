@@ -1,0 +1,20 @@
+FROM <multiline@example.com>
+HEADER
+From: <>
+To: <to@example.com>
+Subject: test
+Date: Fri, 10 Mar 2023 23:29:35 +0000 (UTC)
+Message-ID: <id@example.com>
+.
+DECISION ACCEPT
+HEADER
+Received: placeholder
+From: <>
+To: <to@example.com>
+Subject: test
+Date: Fri, 10 Mar 2023 23:29:35 +0000 (UTC)
+Message-ID: <id@example.com>
+X-MultiLine: Line1
+	Line2
+	Line3
+.

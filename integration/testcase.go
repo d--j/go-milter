@@ -751,9 +751,10 @@ func DiffOutput(expected, got *Output) (string, bool) {
 }
 
 var unfoldRegex = regexp.MustCompile(`\r?\n\s*`)
+var unfoldRegex2 = regexp.MustCompile(` \t`)
 
 func unfold(in []byte) []byte {
-	return unfoldRegex.ReplaceAll(in, []byte(" "))
+	return unfoldRegex2.ReplaceAll(unfoldRegex.ReplaceAll(in, []byte(" ")), []byte(" "))
 }
 
 // CompareOutputSendmail is a relaxed compare function that does only check
