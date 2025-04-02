@@ -37,6 +37,13 @@ func ExampleNew() {
 			}
 			return mailfilter.Accept, nil
 		},
+		mailfilter.WithRcptToValidator(func(_ context.Context, in *mailfilter.RcptToValidationInput) (mailfilter.Decision, error) {
+			if in.MailFrom.UnicodeDomain() == "スパム.example.com" {
+				time.Sleep(time.Second * 5) // slow down the spammer
+				return mailfilter.CustomErrorResponse(554, "5.7.1 You cannot send from this domain"), nil
+			}
+			return mailfilter.Accept, nil
+		}),
 		// optimization: call the decision function when all headers were sent to us
 		mailfilter.WithDecisionAt(mailfilter.DecisionAtEndOfHeaders),
 	)

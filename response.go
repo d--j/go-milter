@@ -21,6 +21,7 @@ func (r *Response) Response() *wire.Message {
 }
 
 // Continue returns false if the MTA should stop sending events for this transaction, true otherwise.
+// If the Response is for a RCPT TO event, this function will return true if the MTA should accept this recipient.
 // A [RespDiscard] Response will return false because the MTA should end sending events for the current
 // SMTP transaction to this milter.
 func (r *Response) Continue() bool {

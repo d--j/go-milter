@@ -233,10 +233,10 @@ func (m *serverSession) Process(msg *wire.Message) (*Response, error) {
 		}
 		m.macros.DelStageAndAbove(StageData)
 		to := wire.ReadCString(msg.Data)
-		msg.Data = msg.Data[len(to)+1:]
+		rest := msg.Data[len(to)+1:]
 
 		// the rest of the data are ESMTP arguments, separated by a zero byte.
-		esmtpArgs := strings.Join(wire.DecodeCStrings(msg.Data), " ")
+		esmtpArgs := strings.Join(wire.DecodeCStrings(rest), " ")
 
 		return m.backend.RcptTo(RemoveAngle(to), esmtpArgs, newModifier(m, true))
 
@@ -412,14 +412,20 @@ func (m *serverSession) HandleMilterCommands() {
 			return
 		}
 
-		if !resp.Continue() {
+		// Is this response a decision about the message?
+		cont := resp.Continue()
+		// special case for RCPT TO, only a discard will end the transaction
+		if msg.Code == wire.CodeRcpt {
+			cont = resp.code != wire.Code(wire.ActDiscard)
+		}
+		if !cont {
+			// prepare backend for next message, when the MTA is done with the current one
+			m.newBackend()
+			m.macros.DelStageAndAbove(StageMail)
 			// gracefully exit after we made a decision when the server is shutting down
 			if m.shuttingDown() {
 				return
 			}
-			// prepare backend for next message
-			m.newBackend()
-			m.macros.DelStageAndAbove(StageMail)
 		}
 	}
 }

@@ -37,7 +37,7 @@ type Action struct {
 	SMTPReply string
 }
 
-// StopProcessing returns true when the milter wants to immediately stop this SMTP connection
+// StopProcessing returns true when the milter wants to immediately stop this SMTP connection or reject this recipient.
 // (a.Type is one of ActionReject, ActionTempFail or ActionRejectWithCode).
 // You can use [Action.SMTPReply] to send as reply to the current SMTP command.
 func (a Action) StopProcessing() bool {

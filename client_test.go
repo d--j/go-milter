@@ -3,6 +3,7 @@ package milter
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -1615,6 +1616,24 @@ func TestMilterClient_WithMockServer(t *testing.T) {
 				}
 			}, server: nil},
 		}},
+		{"milter rejects a rcpt", withActC(withProtC(0), OptChangeFrom), ops{
+			{s1: sendConnect, v1: expectContinue, server: responseContinue},
+			{s1: sendHelo, v1: expectContinue, server: responseContinue},
+			{s1: sendMail, v1: expectContinue, server: responseContinue},
+			{s1: sendRcpt, v1: expectContinue, server: responseContinue},
+			{s1: sendRcpt, v1: expectReject, server: []byte{0, 0, 0, 1, byte(wire.ActReject)}},
+			{s1: sendData, v1: expectContinue, server: responseContinue},
+			{s1: sendHeaderField, v1: expectContinue, server: responseContinue},
+			{s1: sendHeaderEnd, v1: expectContinue, server: responseContinue},
+			{s1: sendBodyChunk, v1: expectContinue, server: responseContinue},
+			{s3: sendEnd, v3: func(t *testing.T, s *ClientSession, mActs []ModifyAction, act *Action, err error) {
+				expectAct(ActionAccept, t, act, err)
+				exp := []ModifyAction{{Type: ActionChangeHeader, HeaderIndex: 3, HeaderName: "A", HeaderValue: "B"}}
+				if !reflect.DeepEqual(exp, mActs) {
+					t.Fatalf("modifications: expect %+v, got %+v", exp, mActs)
+				}
+			}, server: []byte{0, 0, 0, 9, byte(wire.ActChangeHeader), 0, 0, 0, 3, 'A', 0, 'B', 0, 0, 0, 0, 1, byte(wire.ActAccept)}},
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1629,7 +1648,7 @@ func TestMilterClient_WithMockServer(t *testing.T) {
 				for {
 					_ = serverConn.SetReadDeadline(time.Now().Add(time.Minute))
 					if _, err := serverConn.Read(buf); err != nil {
-						if err != io.EOF && err != io.ErrClosedPipe {
+						if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrClosedPipe) {
 							t.Logf("server got error: read: %v", err)
 						}
 						return
@@ -1647,7 +1666,7 @@ func TestMilterClient_WithMockServer(t *testing.T) {
 						continue
 					}
 					if _, err := serverConn.Write(op.server); err != nil {
-						if err != io.ErrClosedPipe {
+						if !errors.Is(err, io.ErrClosedPipe) {
 							t.Logf("server got error: write: %v", err)
 						}
 						return

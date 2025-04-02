@@ -18,6 +18,7 @@ type mockSession struct {
 	modifications              []*wire.Message
 	progressCalled             int
 	macros                     *milter.MacroBag
+	progressErr                error
 	WritePacket, WriteProgress func(msg *wire.Message) error
 }
 
@@ -28,7 +29,7 @@ func (s *mockSession) writePacket(msg *wire.Message) error {
 
 func (s *mockSession) writeProgress(_ *wire.Message) error {
 	s.progressCalled++
-	return nil
+	return s.progressErr
 }
 
 func (s *mockSession) newModifier() *milter.Modifier {
@@ -454,6 +455,119 @@ func Test_backend_RcptTo(t *testing.T) {
 	got := b.transaction.origRcptTos
 	if !reflect.DeepEqual(got, expect) {
 		t.Fatalf("RcptTo() = %v, expected %v", got, expect)
+	}
+}
+
+func Test_backend_RcptToReject(t *testing.T) {
+	t.Parallel()
+	b, s := newMockBackend()
+	b.opts.rcptToValidator = func(_ context.Context, in *RcptToValidationInput) (Decision, error) {
+		in.MTA.Daemon = "change in copy"
+		if in.RcptTo.Addr == "root@localhost" {
+			return Accept, nil
+		}
+		time.Sleep(time.Second * 2)
+		return Reject, nil
+	}
+	resp, err := b.RcptTo("root@localhost", "A=B", s.newModifier())
+	assertContinue(t, resp, err)
+	s.macros.Set(milter.MacroRcptMailer, "2")
+	resp, err = b.RcptTo("nobody@localhost", "", s.newModifier())
+	if err != nil {
+		t.Fatalf("got err %s", err)
+	}
+	if resp != milter.RespReject {
+		t.Fatalf("got resp %v expected reject", resp)
+	}
+	expect := []*addr.RcptTo{
+		addr.NewRcptTo("root@localhost", "A=B", "rcpt-mailer"),
+	}
+	got := b.transaction.origRcptTos
+	if !reflect.DeepEqual(got, expect) {
+		t.Fatalf("RcptTo() = %v, expected %v", got, expect)
+	}
+	if s.progressCalled < 1 {
+		t.Fatalf("progress not called")
+	}
+	if b.transaction.MTA().Daemon == "change in copy" {
+		t.Fatalf("MTA was not copied to rcptToValidator")
+	}
+}
+
+func Test_backend_RcptToDiscard(t *testing.T) {
+	t.Parallel()
+	b, s := newMockBackend()
+	b.opts.rcptToValidator = func(_ context.Context, in *RcptToValidationInput) (Decision, error) {
+		if in.RcptTo.Addr == "root@localhost" {
+			return Accept, nil
+		}
+		time.Sleep(time.Second * 2)
+		return Discard, nil
+	}
+	resp, err := b.RcptTo("root@localhost", "A=B", s.newModifier())
+	assertContinue(t, resp, err)
+	s.macros.Set(milter.MacroRcptMailer, "2")
+	resp, err = b.RcptTo("nobody@localhost", "", s.newModifier())
+	if err != nil {
+		t.Fatalf("got err %s", err)
+	}
+	if resp != milter.RespDiscard {
+		t.Fatalf("got resp %v expected discard", resp)
+	}
+	expect := []*addr.RcptTo{
+		addr.NewRcptTo("root@localhost", "A=B", "rcpt-mailer"),
+	}
+	got := b.transaction.origRcptTos
+	if !reflect.DeepEqual(got, expect) {
+		t.Fatalf("RcptTo() = %v, expected %v", got, expect)
+	}
+	if s.progressCalled < 1 {
+		t.Fatalf("progress not called")
+	}
+}
+
+func Test_backend_RcptToValidationError(t *testing.T) {
+	t.Parallel()
+	b, s := newMockBackend()
+	b.opts.rcptToValidator = func(ctx context.Context, in *RcptToValidationInput) (Decision, error) {
+		if in.RcptTo.Addr == "root@localhost" {
+			return Accept, nil
+		}
+		return nil, errors.New("error")
+	}
+	resp, err := b.RcptTo("root@localhost", "A=B", s.newModifier())
+	assertContinue(t, resp, err)
+	s.macros.Set(milter.MacroRcptMailer, "2")
+	resp, err = b.RcptTo("nobody@localhost", "", s.newModifier())
+	if err == nil {
+		t.Fatalf("got err nil, expected error")
+	}
+}
+
+func Test_backend_RcptToProgressError(t *testing.T) {
+	t.Parallel()
+	b, s := newMockBackend()
+	b.opts.rcptToValidator = func(ctx context.Context, in *RcptToValidationInput) (Decision, error) {
+		if in.RcptTo.Addr == "root@localhost" {
+			return Accept, nil
+		}
+		select {
+		case <-time.After(time.Second * 2):
+			return Discard, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	s.progressErr = errors.New("error")
+	resp, err := b.RcptTo("root@localhost", "A=B", s.newModifier())
+	assertContinue(t, resp, err)
+	s.macros.Set(milter.MacroRcptMailer, "2")
+	resp, err = b.RcptTo("nobody@localhost", "", s.newModifier())
+	if err == nil {
+		t.Fatalf("got err nil, expected context done")
+	}
+	if s.progressCalled < 1 {
+		t.Fatalf("progress not called")
 	}
 }
 

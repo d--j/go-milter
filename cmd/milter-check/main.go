@@ -117,9 +117,22 @@ func main() {
 			log.Println(err)
 			return
 		}
-		printAction("RCPT:", act)
-		if act.StopProcessing() {
+		switch act.Type {
+		case milter.ActionAccept:
+			log.Println("RCPT: accept recipient", rcpt)
+		case milter.ActionReject:
+			log.Println("RCPT: reject recipient", rcpt)
+		case milter.ActionDiscard:
+			log.Println("RCPT: discard")
 			return
+		case milter.ActionTempFail:
+			log.Println("RCPT: temp. fail recipient", rcpt)
+		case milter.ActionRejectWithCode:
+			log.Println("RCPT: reply code reject recipient:", act.SMTPCode, act.SMTPReply, rcpt)
+		case milter.ActionContinue:
+			log.Println("RCPT: accept recipient (continue)", rcpt)
+		case milter.ActionSkip:
+			log.Println("RCPT: accept recipient (skip)", rcpt)
 		}
 	}
 

@@ -24,7 +24,7 @@ type backend struct {
 }
 
 func (b *backend) decideOrContinue(stage DecisionAt, m *milter.Modifier) (*milter.Response, error) {
-	if b.opts.decisionAt == stage {
+	if b.opts.decisionAt == stage && !b.transaction.hasDecision {
 		b.makeDecision(m)
 		if !b.transaction.hasModifications() {
 			if b.transaction.decisionErr != nil {
@@ -132,8 +132,65 @@ func (b *backend) RcptTo(rcptTo string, esmtpArgs string, m *milter.Modifier) (*
 	if b.transaction.hasDecision {
 		return milter.RespSkip, nil
 	}
-	b.transaction.origRcptTos = append(b.transaction.origRcptTos, addr.NewRcptTo(rcptTo, esmtpArgs, m.Macros.Get(milter.MacroRcptMailer)))
-	return milter.RespContinue, nil
+	if b.opts.rcptToValidator != nil {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		ctx, cancel := context.WithCancel(context.Background())
+		type ret struct {
+			Decision Decision
+			Err      error
+		}
+		done := make(chan ret)
+		go func() {
+			mtaCopy := *b.transaction.MTA()
+			connectCopy := *b.transaction.Connect()
+			heloCopy := *b.transaction.Helo()
+			dec, err := b.opts.rcptToValidator(ctx, &RcptToValidationInput{
+				MTA:      &mtaCopy,
+				Connect:  &connectCopy,
+				Helo:     &heloCopy,
+				MailFrom: b.transaction.MailFrom().Copy(),
+				RcptTo:   addr.NewRcptTo(rcptTo, esmtpArgs, m.Macros.Get(milter.MacroRcptMailer)),
+			})
+			done <- ret{dec, err}
+		}()
+		for {
+			select {
+			case r := <-done:
+				cancel()
+				if r.Err != nil {
+					return b.error(r.Err)
+				}
+				if r.Decision == nil || r.Decision.Equal(Accept) {
+					b.transaction.origRcptTos = append(b.transaction.origRcptTos, addr.NewRcptTo(rcptTo, esmtpArgs, m.Macros.Get(milter.MacroRcptMailer)))
+					return milter.RespContinue, nil
+				} else {
+					if r.Decision == Discard {
+						b.transaction.hasDecision = true
+						b.transaction.decision = Discard
+					}
+					return decisionToResponse(r.Decision), nil
+				}
+			case <-ticker.C:
+				err := m.Progress()
+				if err != nil {
+					// the connection broke, instruct validator function to abort
+					cancel()
+					// wait for validator function
+					r := <-done
+					// if there was no error in the validator function (e.g. it did not actually check ctx.Done())
+					// return the context error (it is non-nil at this point)
+					if r.Err == nil {
+						return b.error(ctx.Err())
+					}
+					return b.error(r.Err)
+				}
+			}
+		}
+	} else {
+		b.transaction.origRcptTos = append(b.transaction.origRcptTos, addr.NewRcptTo(rcptTo, esmtpArgs, m.Macros.Get(milter.MacroRcptMailer)))
+		return milter.RespContinue, nil
+	}
 }
 
 func (b *backend) Data(m *milter.Modifier) (*milter.Response, error) {
