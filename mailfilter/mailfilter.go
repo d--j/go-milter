@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/d--j/go-milter"
+	"github.com/d--j/go-milter/mailfilter/addr"
 )
 
 // DecisionModificationFunc is the callback function that you need to implement to create a mail filter.
@@ -23,6 +24,30 @@ import (
 //
 // If you return a non-nil error [WithErrorHandling] will determine what happens with the current SMTP transaction.
 type DecisionModificationFunc func(ctx context.Context, trx Trx) (decision Decision, err error)
+
+// RcptToValidationInput is the input for the [RcptToValidator] function.
+// It contains information about the current SMTP transaction and the recipient address that needs to be validated.
+// You cannot modify anything in this struct, the validator function receives only copies of the values.
+type RcptToValidationInput struct {
+	// MTA holds information about the connecting MTA
+	MTA *MTA
+	// Connect holds the [Connect] information of this transaction.
+	Connect *Connect
+	// Helo holds the [Helo] information of this transaction.
+	Helo *Helo
+	// MailFrom holds the [addr.MailFrom] of this transaction.
+	MailFrom *addr.MailFrom
+	// RcptTo is the recipient address that needs to be validated
+	RcptTo *addr.RcptTo
+}
+
+// RcptToValidator is a function that validates a RCPT TO address.
+// It is called for each RCPT TO address received by the MTA.
+// If the function returns anything other than Accept, the address is rejected.
+// Returning QuarantineResponse is an error. It will silently be treated as Accept.
+// Returning Discard will discard (silently ignore) the whole message. Your decision function will not be called in this case.
+// The function get passed in a context.Context, it might get canceled when the connection to the MTA fails while your callback is running.
+type RcptToValidator func(ctx context.Context, in *RcptToValidationInput) (Decision, error)
 
 type MailFilter struct {
 	wgDone   sync.WaitGroup
@@ -84,6 +109,14 @@ func New(network, address string, decision DecisionModificationFunc, opts ...Opt
 		return nil, fmt.Errorf("the parameter errorHandling of WithErrorHandling is invalid")
 	}
 
+	if resolvedOptions.decisionAt < DecisionAtConnect || resolvedOptions.decisionAt > DecisionAtEndOfMessage {
+		return nil, fmt.Errorf("the parameter decisionAt of WithDecisionAt is invalid")
+	}
+
+	if resolvedOptions.rcptToValidator != nil && resolvedOptions.decisionAt < DecisionAtMailFrom {
+		return nil, fmt.Errorf("you cannot use WithRcptToValidator together with WithDecisionAt set to DecisionAtConnect or DecisionAtHelo")
+	}
+
 	actions := milter.AllClientSupportedActionMasks
 	protocol := milter.OptHeaderLeadingSpace | milter.OptNoUnknown
 
@@ -104,22 +137,27 @@ func New(network, address string, decision DecisionModificationFunc, opts ...Opt
 	if resolvedOptions.body.Skip {
 		protocol = protocol | milter.OptNoBody
 	}
-	macroStages := make([][]milter.MacroName, 0, 6)
-	macroStages = append(macroStages, []milter.MacroName{milter.MacroIfName, milter.MacroIfAddr, milter.MacroMTAVersion, milter.MacroMTAFQDN, milter.MacroDaemonName}) // StageConnect
-	if resolvedOptions.decisionAt > DecisionAtConnect {
-		// StageHelo
-		macroStages = append(macroStages, []milter.MacroName{milter.MacroTlsVersion, milter.MacroCipher, milter.MacroCipherBits, milter.MacroCertSubject, milter.MacroCertIssuer})
+	// remove OptNoRcptTo and OptNoRcptReply if rcptToValidator is set
+	if resolvedOptions.rcptToValidator != nil {
+		protocol = protocol & ^milter.OptNoRcptTo & ^milter.OptNoRcptReply
 	}
-	if resolvedOptions.decisionAt > DecisionAtHelo { // StageMail
-		macroStages = append(macroStages, []milter.MacroName{milter.MacroMailMailer, milter.MacroAuthAuthen, milter.MacroAuthType})
+	macroStages := make([][]milter.MacroName, 0, 6)
+	macroStages = append(macroStages, []milter.MacroName{milter.MacroIfName, milter.MacroIfAddr, milter.MacroMTAVersion, milter.MacroMTAFQDN, milter.MacroDaemonName} /* StageConnect */)
+	if resolvedOptions.decisionAt > DecisionAtConnect {
+		macroStages = append(macroStages, []milter.MacroName{milter.MacroTlsVersion, milter.MacroCipher, milter.MacroCipherBits, milter.MacroCertSubject, milter.MacroCertIssuer} /* StageHelo */)
+	}
+	if resolvedOptions.decisionAt > DecisionAtHelo {
+		macroStages = append(macroStages, []milter.MacroName{milter.MacroMailMailer, milter.MacroAuthAuthen, milter.MacroAuthType} /* StageMail */)
 	}
 	if resolvedOptions.decisionAt > DecisionAtMailFrom {
-		macroStages = append(macroStages, []milter.MacroName{milter.MacroRcptMailer}) // StageRcpt
 		// try two different stages to get the queue ID, normally at the beginning of the DATA command it is already assigned
 		// but if it is not, try at the end of the message
-		macroStages = append(macroStages, []milter.MacroName{milter.MacroQueueId}) //StageData
-		macroStages = append(macroStages, []milter.MacroName{milter.MacroQueueId}) //StageEOM
-		macroStages = append(macroStages, []milter.MacroName{})                    //StageEOH
+		macroStages = append(macroStages,
+			[]milter.MacroName{milter.MacroRcptMailer}, /* StageRcpt */
+			[]milter.MacroName{milter.MacroQueueId},    /* StageData */
+			[]milter.MacroName{milter.MacroQueueId},    /* StageEOM */
+			[]milter.MacroName{},                       /* StageEOH */
+		)
 	}
 
 	milterOptions := []milter.Option{

@@ -1,7 +1,9 @@
 package mailfilter
 
 import (
+	"github.com/d--j/go-milter"
 	"github.com/d--j/go-milter/milterutil"
+	"reflect"
 )
 
 type Decision interface {
@@ -95,5 +97,38 @@ func (c quarantineResponse) Equal(d Decision) bool {
 func QuarantineResponse(reason string) Decision {
 	return &quarantineResponse{
 		reason: reason,
+	}
+}
+
+func decisionToResponse(decision Decision) *milter.Response {
+	switch decision {
+	case Accept:
+		return milter.RespAccept
+	case TempFail:
+		return milter.RespTempFail
+	case Reject:
+		return milter.RespReject
+	case Discard:
+		return milter.RespDiscard
+	default:
+		if decision == nil {
+			milter.LogWarning("milter: mailfilter returned unexpected <nil> Decision")
+			return milter.RespTempFail
+		}
+		custom, ok := decision.(*customResponse)
+		if !ok {
+			milter.LogWarning("milter: mailfilter returned unexpected Decision of type %s: %+v", reflect.TypeOf(decision).String(), decision)
+			return milter.RespTempFail
+		}
+		resp, err := milter.RejectWithCodeAndReason(custom.code, custom.reason)
+		if err != nil {
+			if custom.code >= 500 {
+				milter.LogWarning("milter: reject with custom reason failed, reject instead: %s", err)
+				return milter.RespReject
+			}
+			milter.LogWarning("milter: reject with custom reason failed, temp-fail instead: %s", err)
+			return milter.RespTempFail
+		}
+		return resp
 	}
 }

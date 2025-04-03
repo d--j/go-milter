@@ -201,6 +201,11 @@ func (t *TestCase) Send(steps []*integration.InputStep, port uint16) (uint16, st
 			}
 		case "TO":
 			if err := client.Rcpt(step.Addr, nil); err != nil {
+				// do not stop test when milter rejects a recipient
+				var sErr *smtp.SMTPError
+				if errors.As(err, &sErr) {
+					continue
+				}
 				return smtpErr(err, integration.StepTo)
 			}
 		case "RESET":

@@ -1,10 +1,11 @@
 package mailfilter
 
 type options struct {
-	decisionAt    DecisionAt
-	errorHandling ErrorHandling
-	body          *bodyOption
-	header        *headerOption
+	decisionAt      DecisionAt
+	errorHandling   ErrorHandling
+	body            *bodyOption
+	header          *headerOption
+	rcptToValidator RcptToValidator
 }
 
 type Option func(opt *options)
@@ -35,6 +36,9 @@ const (
 
 // WithDecisionAt sets the decision point for the [MailFilter].
 // The default is [DecisionAtEndOfMessage].
+// If your decision function also made modifications to the Trx (e.g. added a recipient),
+// the Mailfilter will automatically delay sending your decision to the MTA
+// until [milter.Milter.EndOfMessage] gets called (after the DATA command finished).
 func WithDecisionAt(decisionAt DecisionAt) Option {
 	return func(opt *options) {
 		opt.decisionAt = decisionAt
@@ -121,5 +125,14 @@ func WithoutBody() Option {
 func WithBody(maxMem int, maxSize int64, maxAction MaxAction) Option {
 	return func(opt *options) {
 		opt.body = &bodyOption{MaxMem: maxMem, MaxSize: maxSize, MaxAction: maxAction}
+	}
+}
+
+// WithRcptToValidator set a custom validator function, that can be used to reject individual RCPT TO addresses.
+// If you do not set this, all recipient addresses will be accepted.
+// Your decision function can of course always remove recipients from the transaction (without notifying the SMTP client).
+func WithRcptToValidator(validator RcptToValidator) Option {
+	return func(opt *options) {
+		opt.rcptToValidator = validator
 	}
 }

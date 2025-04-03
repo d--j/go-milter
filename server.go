@@ -275,6 +275,10 @@ func (s *Server) closeActiveSessionsLocked() {
 	for sess := range s.activeSessions {
 		conn := sess.conn
 		sess.conn = nil
+		if sess.backend != nil {
+			sess.backend.Cleanup()
+			sess.backend = nil
+		}
 		_ = conn.Close()
 	}
 	s.activeSessions = nil

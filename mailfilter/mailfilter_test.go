@@ -58,6 +58,9 @@ func TestNew(t *testing.T) {
 	decider := func(_ context.Context, _ Trx) (Decision, error) {
 		return Accept, nil
 	}
+	validatorAcceptAll := func(_ context.Context, _ *RcptToValidationInput) (Decision, error) {
+		return Accept, nil
+	}
 	const endOfMessage = milter.OptHeaderLeadingSpace | milter.OptNoUnknown | milter.OptNoConnReply | milter.OptNoHeloReply | milter.OptNoRcptReply | milter.OptNoHeaderReply | milter.OptNoEOHReply | milter.OptNoBodyReply
 	type args struct {
 		network  string
@@ -267,6 +270,26 @@ func TestNew(t *testing.T) {
 			endOfMessage,
 		}, false},
 		{"error-handling-err", args{"tcp", "127.0.0.1:", decider, []Option{WithErrorHandling(99)}}, want{}, true},
+		{"rcpt-to-validator", args{"tcp", "127.0.0.1:", decider, []Option{WithRcptToValidator(validatorAcceptAll), WithDecisionAt(DecisionAtData)}}, want{
+			options{
+				decisionAt:    DecisionAtData,
+				errorHandling: TempFailWhenError,
+				body: &bodyOption{
+					Skip:      false,
+					MaxMem:    1024 * 200,
+					MaxSize:   1024 * 1024 * 100,
+					MaxAction: TruncateWhenTooBig,
+				},
+				header: &headerOption{
+					Max:       512,
+					MaxAction: TruncateWhenTooBig,
+				},
+				rcptToValidator: validatorAcceptAll,
+			},
+			milter.OptHeaderLeadingSpace | milter.OptNoUnknown | milter.OptNoConnReply | milter.OptNoHeloReply | milter.OptNoMailReply | milter.OptNoHeaders | milter.OptNoEOH | milter.OptNoBody,
+		}, false},
+		{"decisionAt-err", args{"tcp", "127.0.0.1:", decider, []Option{WithDecisionAt(99)}}, want{}, true},
+		{"rcptToValidator-err", args{"tcp", "127.0.0.1:", decider, []Option{WithRcptToValidator(validatorAcceptAll), WithDecisionAt(DecisionAtConnect)}}, want{}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -280,6 +303,11 @@ func TestNew(t *testing.T) {
 					t.Fatal("New() is nil")
 				}
 				t.Cleanup(got.Close)
+				if (got.options.rcptToValidator == nil) != (tt.want.options.rcptToValidator == nil) {
+					t.Errorf("New() resolvedOptions.rcptToValidator got = %+v, want %+v", got.options.rcptToValidator, tt.want.options.rcptToValidator)
+				}
+				got.options.rcptToValidator = nil
+				tt.want.options.rcptToValidator = nil
 				if !reflect.DeepEqual(got.options, tt.want.options) {
 					t.Errorf("New() resolvedOptions got = %+v, want %+v", got.options, tt.want.options)
 				}

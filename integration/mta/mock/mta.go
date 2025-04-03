@@ -259,8 +259,18 @@ func (s *Session) Rcpt(to string, _ *smtp.RcptOptions) error {
 	if s.discarded {
 		return nil
 	}
+	milterResp, err := s.filter.Rcpt(to, "")
+	if err != nil {
+		return err
+	}
+	if milterResp.Type == milter.ActionDiscard {
+		s.discarded = true
+	}
+	if milterResp.StopProcessing() {
+		return errorFromResp(milterResp)
+	}
 	s.Recipients = append(s.Recipients, Rcpt{Addr: to})
-	return s.handleMilter(s.filter.Rcpt(to, ""))
+	return nil
 }
 
 func (s *Session) Data(r io.Reader) error {

@@ -22,6 +22,7 @@ func ExampleClient() {
 		panic(err)
 	}
 	defer session.Close()
+	var rcptTos []string
 
 	handleMilterResponse := func(act *milter.Action, err error) {
 		if err != nil {
@@ -31,6 +32,21 @@ func ExampleClient() {
 		if act.StopProcessing() {
 			// abort SMTP transaction, you can use act.SMTPReply to send to the SMTP client
 			panic(act.SMTPReply)
+		}
+		if act.Type == milter.ActionDiscard {
+			// close the milter connection (do not send more SMTP events of this SMTP transaction)
+			// but keep SMTP connection open and after DATA, silently discard the message
+			panic(session.Close())
+		}
+	}
+	currentRcpt := ""
+	handleMilterRcptToResponse := func(act *milter.Action, err error) {
+		if err != nil {
+			// you should disable this milter for this connection or close the SMTP transaction
+			panic(err)
+		}
+		if !act.StopProcessing() {
+			rcptTos = append(rcptTos, currentRcpt)
 		}
 		if act.Type == milter.ActionDiscard {
 			// close the milter connection (do not send more SMTP events of this SMTP transaction)
@@ -56,12 +72,14 @@ func ExampleClient() {
 	macros.Set(milter.MacroRcptMailer, "local")
 	macros.Set(milter.MacroRcptHost, "example.com")
 	macros.Set(milter.MacroRcptAddr, "other-spammer@example.com")
-	handleMilterResponse(session.Rcpt("<other-spammer@example.com>", ""))
+	currentRcpt = "<other-spammer2@example.com>"
+	handleMilterRcptToResponse(session.Rcpt("<other-spammer@example.com>", ""))
 
 	macros.Set(milter.MacroRcptMailer, "local")
 	macros.Set(milter.MacroRcptHost, "example.com")
 	macros.Set(milter.MacroRcptAddr, "other-spammer2@example.com")
-	handleMilterResponse(session.Rcpt("<other-spammer2@example.com>", ""))
+	currentRcpt = "<other-spammer2@example.com>"
+	handleMilterRcptToResponse(session.Rcpt("<other-spammer2@example.com>", ""))
 
 	// After DataStart you should send the initial SMTP data to the first milter, accept and apply its modifications
 	// and then send this modified data to the next milter. Before this point all milters could be queried in parallel.

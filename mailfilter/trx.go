@@ -19,7 +19,7 @@ type Trx interface {
 	// Only populated if [WithDecisionAt] is bigger than [DecisionAtConnect].
 	Helo() *Helo
 
-	// MailFrom holds the [MailFrom] of this transaction.
+	// MailFrom holds the [addr.MailFrom] of this transaction.
 	// Your changes to this pointer's Addr and Args values get send back to the MTA.
 	//
 	// Only populated if [WithDecisionAt] is bigger than [DecisionAtHelo].
