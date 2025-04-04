@@ -1,0 +1,4 @@
+FROM <reject-me@example.com>
+DECISION CUSTOM@*
+550-5.7.1 We do not like you
+550 5.7.1 very much, please go away
