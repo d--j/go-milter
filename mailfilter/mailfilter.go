@@ -136,6 +136,11 @@ func New(network, address string, decision DecisionModificationFunc, opts ...Opt
 	}
 	if resolvedOptions.body.Skip {
 		protocol = protocol | milter.OptNoBody
+	} else if resolvedOptions.body.MaxAction == RejectMessageWhenTooBig {
+		protocol = protocol & ^milter.OptNoBodyReply
+	}
+	if resolvedOptions.header.MaxAction == RejectMessageWhenTooBig {
+		protocol = protocol & ^milter.OptNoHeaderReply
 	}
 	// remove OptNoRcptTo and OptNoRcptReply if rcptToValidator is set
 	if resolvedOptions.rcptToValidator != nil {

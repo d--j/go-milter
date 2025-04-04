@@ -211,7 +211,7 @@ func TestNew(t *testing.T) {
 					MaxAction: TruncateWhenTooBig,
 				},
 			},
-			endOfMessage,
+			endOfMessage & ^milter.OptNoBodyReply,
 		}, false},
 		{"with-body-err-1", args{"tcp", "127.0.0.1:", decider, []Option{WithBody(12, 34, 99)}}, want{}, true},
 		{"with-body-err-2", args{"tcp", "127.0.0.1:", decider, []Option{WithBody(12, 0, RejectMessageWhenTooBig)}}, want{}, true},
@@ -231,7 +231,7 @@ func TestNew(t *testing.T) {
 					MaxAction: RejectMessageWhenTooBig,
 				},
 			},
-			endOfMessage,
+			endOfMessage & ^milter.OptNoHeaderReply,
 		}, false},
 		{"with-header-big", args{"tcp", "127.0.0.1:", decider, []Option{WithHeader(math.MaxUint32, TruncateWhenTooBig)}}, want{
 			options{
