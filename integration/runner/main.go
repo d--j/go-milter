@@ -6,8 +6,9 @@ import (
 )
 
 var LevelOneLogger = log.New(os.Stdout, "= ", 0)
-var LevelTwoLogger = log.New(os.Stdout, "== ", 0)
-var LevelThreeLogger = log.New(os.Stdout, "=== ", 0)
+var LevelTwoLogger = log.New(os.Stdout, " = ", 0)
+var LevelThreeLogger = log.New(os.Stdout, "  = ", 0)
+var LevelFourLogger = log.New(os.Stdout, "   = ", 0)
 
 func main() {
 	config := ParseConfig()

@@ -1,0 +1,8 @@
+TO <reject-one@example.com>
+TO <allowed@example.com>
+TO <allowed2@example.com>
+RESET
+TO <allowed@example.com>
+TO <reject-one@example.com>
+DECISION ACCEPT
+TO <allowed@example.com> *
