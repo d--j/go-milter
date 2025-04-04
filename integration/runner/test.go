@@ -242,7 +242,20 @@ func (t *TestCase) Send(steps []*integration.InputStep, port uint16) (uint16, st
 func smtpErr(err error, step integration.DecisionStep) (uint16, string, integration.DecisionStep, error) {
 	var sErr *smtp.SMTPError
 	if errors.As(err, &sErr) {
-		return uint16(sErr.Code), sErr.Message, step, nil
+		msg := sErr.Msg
+		if strings.HasPrefix(msg, "(!!!)") && strings.HasSuffix(msg, "(!!!)") {
+			// the mock milter encodes the error message in a special way
+			msg = strings.TrimPrefix(msg, "(!!!)")
+			msg = strings.TrimSuffix(msg, "(!!!)")
+			msg = strings.ReplaceAll(msg, "\\r", "\r")
+			msg = strings.ReplaceAll(msg, "\\n", "\n")
+			r := textproto.NewReader(bufio.NewReader(strings.NewReader(msg)))
+			_, msg, err = r.ReadResponse(sErr.Code)
+			if err != nil {
+				return uint16(sErr.Code), err.Error(), step, err
+			}
+		}
+		return uint16(sErr.Code), msg, step, nil
 	}
 	return 0, "", step, err
 }

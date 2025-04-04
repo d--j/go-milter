@@ -33,10 +33,13 @@ type Msg struct {
 var queue chan Msg
 
 func errorFromResp(resp *milter.Action) *smtp.SMTPError {
+	// github.com/emersion/go-smtp botches our multi-line error messages, so we escape it here and un-escape it the runner
+	msg := resp.SMTPReply
+	fixedMsg := "(!!!)" + strings.ReplaceAll(strings.ReplaceAll(msg, "\n", "\\n"), "\r", "\\r") + "(!!!)"
 	return &smtp.SMTPError{
 		Code:         int(resp.SMTPCode),
 		EnhancedCode: smtp.NoEnhancedCode,
-		Message:      resp.SMTPReply[4:],
+		Message:      fixedMsg,
 	}
 }
 
