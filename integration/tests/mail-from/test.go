@@ -19,7 +19,7 @@ func main() {
 			return mailfilter.Discard, nil
 		}
 		if trx.MailFrom().Addr == "custom@example.com" {
-			return mailfilter.CustomErrorResponse(555, "custom"), nil
+			return mailfilter.CustomErrorResponse(555, "5.0.0 custom"), nil
 		}
 		if trx.MailFrom().Addr == "quarantine@example.com" {
 			return mailfilter.QuarantineResponse("test"), nil
