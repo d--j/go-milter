@@ -312,7 +312,7 @@ func TestNew(t *testing.T) {
 					t.Errorf("New() resolvedOptions got = %+v, want %+v", got.options, tt.want.options)
 				}
 				if !reflect.DeepEqual(got.protocol, tt.want.protocol) {
-					t.Errorf("New() protocol got = \n%032b\nwant\n%032b", got.protocol, tt.want.protocol)
+					t.Errorf("New() protocol got = \n%q\nwant\n%q", got.protocol, tt.want.protocol)
 				}
 				waited := make(chan struct{}, 1)
 				go func() {

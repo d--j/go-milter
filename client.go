@@ -113,7 +113,7 @@ func NewClient(network, address string, opts ...Option) *Client {
 			all = allClientSupportedProtocolMasks
 		}
 		if options.protocol&^all != 0 {
-			panic(fmt.Sprintf("Provided invalid protocol options for milter version %d %032b", options.maxVersion, options.protocol))
+			panic(fmt.Sprintf("Provided invalid protocol options for milter version %d %q", options.maxVersion, options.protocol))
 		}
 	}
 	// offering nothing to filters is unlikely, just default to all we can handle
@@ -286,7 +286,7 @@ func (s *ClientSession) negotiate(maximumVersion uint32, actionMask OptAction, p
 
 	milterActionMask := OptAction(binary.BigEndian.Uint32(msg.Data[4:]))
 	if milterActionMask&actionMask != milterActionMask {
-		return s.errorOut(fmt.Errorf("milter: negotiate: unsupported actions requested: MTA %032b filter %032b", actionMask, milterActionMask))
+		return s.errorOut(fmt.Errorf("milter: negotiate: unsupported actions requested: MTA %q filter %q", actionMask, milterActionMask))
 	}
 	s.actionOpts = milterActionMask
 	milterProtoMask := OptProtocol(binary.BigEndian.Uint32(msg.Data[8:]))
@@ -302,7 +302,7 @@ func (s *ClientSession) negotiate(maximumVersion uint32, actionMask OptAction, p
 	// mask out the size flags
 	milterProtoMask = milterProtoMask & (^OptProtocol(optInternal))
 	if milterProtoMask&protoMask != milterProtoMask {
-		return s.errorOut(fmt.Errorf("milter: negotiate: unsupported protocol options requested: MTA %032b filter %032b", protoMask, milterProtoMask))
+		return s.errorOut(fmt.Errorf("milter: negotiate: unsupported protocol options requested: MTA %q filter %q", protoMask, milterProtoMask))
 	}
 
 	// do not send commands that older versions do not understand

@@ -76,11 +76,11 @@ func (m *serverSession) negotiate(msg *wire.Message, milterVersion uint32, milte
 		}
 		m.version = mtaVersion
 		if milterActions&mtaActionMask != milterActions {
-			return nil, fmt.Errorf("milter: negotiate: MTA does not offer required actions. offered: %032b requested: %032b", mtaActionMask, milterActions)
+			return nil, fmt.Errorf("milter: negotiate: MTA does not offer required actions. offered: %q requested: %q", mtaActionMask, milterActions)
 		}
 		m.actions = milterActions & mtaActionMask
 		if milterProtocol&mtaProtoMask != milterProtocol {
-			return nil, fmt.Errorf("milter: negotiate: MTA does not offer required protocol options. offered: %032b requested: %032b", mtaProtoMask, milterProtocol)
+			return nil, fmt.Errorf("milter: negotiate: MTA does not offer required protocol options. offered: %q requested: %q", mtaProtoMask, milterProtocol)
 		}
 		m.protocol = milterProtocol & mtaProtoMask
 		maxDataSize = offeredMaxDataSize

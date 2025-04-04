@@ -631,10 +631,10 @@ func TestMilterClient_Negotiation(t *testing.T) {
 				t.Fatalf("version: got %d expected %d", session.version, ltt.wantVersion)
 			}
 			if session.actionOpts != ltt.wantActions {
-				t.Fatalf("actions: got %032b expected %032b", session.actionOpts, ltt.wantActions)
+				t.Fatalf("actions: got %q expected %q", session.actionOpts, ltt.wantActions)
 			}
 			if session.protocolOpts != ltt.wantProtocol {
-				t.Fatalf("protocol: got %032b expected %032b", session.protocolOpts, ltt.wantProtocol)
+				t.Fatalf("protocol: got %q expected %q", session.protocolOpts, ltt.wantProtocol)
 			}
 			if session.negotiatedBodySize != uint32(ltt.wantBufferSize) {
 				t.Fatalf("buffer size: got %d expected %d", session.negotiatedBodySize, ltt.wantBufferSize)

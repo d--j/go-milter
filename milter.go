@@ -1,6 +1,11 @@
 // Package milter provides an interface to implement milter mail filters and MTAs that can talk to milter programs.
 package milter
 
+import (
+	"fmt"
+	"strings"
+)
+
 // OptAction sets which actions the milter wants to perform.
 // Multiple options can be set using a bitmask.
 type OptAction uint32
@@ -17,6 +22,39 @@ const (
 	OptAddRcptWithArgs OptAction = 1 << 7 // SMFIF_ADDRCPT_PAR [v6]
 	OptSetMacros       OptAction = 1 << 8 // SMFIF_SETSYMLIST [v6]
 )
+
+// String returns a string representation of the OptAction.
+// It is used for debugging purposes.
+func (o OptAction) String() string {
+	var s []string
+	for i := 0; i < 32; i++ {
+		if o&(1<<i) != 0 {
+			switch i {
+			case 0:
+				s = append(s, "OptAddHeader")
+			case 1:
+				s = append(s, "OptChangeBody")
+			case 2:
+				s = append(s, "OptAddRcpt")
+			case 3:
+				s = append(s, "OptRemoveRcpt")
+			case 4:
+				s = append(s, "OptChangeHeader")
+			case 5:
+				s = append(s, "OptQuarantine")
+			case 6:
+				s = append(s, "OptChangeFrom")
+			case 7:
+				s = append(s, "OptAddRcptWithArgs")
+			case 8:
+				s = append(s, "OptSetMacros")
+			default:
+				s = append(s, fmt.Sprintf("unknown bit %d", i))
+			}
+		}
+	}
+	return strings.Join(s, "|")
+}
 
 // OptProtocol masks out unwanted parts of the SMTP transaction.
 // Multiple options can be set using a bitmask.
@@ -75,6 +113,69 @@ const (
 	optInternal        = optMds256K | optMds1M | 1<<30 // internal flags: only used between MTA and libmilter (bit 28,29,30). SMFI_INTERNAL
 	optV2       uint32 = 0x0000007F                    // All flags that v2 defined (bit 0, 1, 2, 3, 4, 5, 6). SMFI_V2_PROT
 )
+
+// String returns a string representation of the OptProtocol.
+// It is used for debugging purposes.
+func (o OptProtocol) String() string {
+	var s []string
+	for i := 0; i < 32; i++ {
+		if o&(1<<i) != 0 {
+			switch i {
+			case 0:
+				s = append(s, "OptNoConnect")
+			case 1:
+				s = append(s, "OptNoHelo")
+			case 2:
+				s = append(s, "OptNoMailFrom")
+			case 3:
+				s = append(s, "OptNoRcptTo")
+			case 4:
+				s = append(s, "OptNoBody")
+			case 5:
+				s = append(s, "OptNoHeaders")
+			case 6:
+				s = append(s, "OptNoEOH")
+			case 7:
+				s = append(s, "OptNoHeaderReply")
+			case 8:
+				s = append(s, "OptNoUnknown")
+			case 9:
+				s = append(s, "OptNoData")
+			case 10:
+				s = append(s, "OptSkip")
+			case 11:
+				s = append(s, "OptRcptRej")
+			case 12:
+				s = append(s, "OptNoConnReply")
+			case 13:
+				s = append(s, "OptNoHeloReply")
+			case 14:
+				s = append(s, "OptNoMailReply")
+			case 15:
+				s = append(s, "OptNoRcptReply")
+			case 16:
+				s = append(s, "OptNoDataReply")
+			case 17:
+				s = append(s, "OptNoUnknownReply")
+			case 18:
+				s = append(s, "OptNoEOHReply")
+			case 19:
+				s = append(s, "OptNoBodyReply")
+			case 20:
+				s = append(s, "OptHeaderLeadingSpace")
+			case 28:
+				s = append(s, "optMds256K")
+			case 29:
+				s = append(s, "optMds1M")
+			case 30:
+				s = append(s, "internal bit 30")
+			default:
+				s = append(s, fmt.Sprintf("unknown bit %d", i))
+			}
+		}
+	}
+	return strings.Join(s, "|")
+}
 
 // DataSize defines the maximum data size for milter or MTA to use.
 //

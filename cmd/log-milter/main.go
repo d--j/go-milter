@@ -63,7 +63,7 @@ func main() {
 			return &LogMilter{logPrefix: randSeq(10)}
 		}),
 		milter.WithNegotiationCallback(func(mtaVersion, milterVersion uint32, mtaActions, milterActions milter.OptAction, mtaProtocol, milterProtocol milter.OptProtocol, offeredDataSize milter.DataSize) (version uint32, actions milter.OptAction, protocol milter.OptProtocol, maxDataSize milter.DataSize, err error) {
-			log.Printf("ACCEPT milter version %d, actions %032b, protocol %032b, data size %d", mtaVersion, mtaActions, mtaProtocol, offeredDataSize)
+			log.Printf("ACCEPT milter version %d, actions %q, protocol %q, data size %d", mtaVersion, mtaActions, mtaProtocol, offeredDataSize)
 			return mtaVersion, mtaActions, 0, offeredDataSize, nil
 		}),
 	)
