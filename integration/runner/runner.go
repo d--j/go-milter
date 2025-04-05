@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"time"
 
 	"github.com/d--j/go-milter/integration"
 )
@@ -20,10 +21,10 @@ func NewRunner(config *Config, receiver *Receiver) *Runner {
 
 func (r *Runner) Run() bool {
 	var prevMta *MTA
-	var prevDir *TestDir
+	var activeDir *TestDir
 	defer func() {
-		if prevDir != nil {
-			prevDir.Stop()
+		if activeDir != nil {
+			activeDir.Stop()
 		}
 		if prevMta != nil {
 			prevMta.Stop()
@@ -43,7 +44,7 @@ func (r *Runner) Run() bool {
 				return false
 			}
 		}
-		prevDir = dir
+		activeDir = dir
 		LevelTwoLogger.Print(dir.Path)
 		if err := dir.Start(); err != nil {
 			if errors.Is(err, ErrTestSkipped) {
@@ -60,37 +61,12 @@ func (r *Runner) Run() bool {
 		for _, t := range dir.Tests {
 			i++
 			LevelThreeLogger.Printf("%03d/%03d %s", i, tests, t.Filename)
-			if t.TestCase.ExpectsOutput() {
-				r.receiver.ExpectMessage()
-			}
-			code, message, step, err := t.Send(t.TestCase.InputSteps, dir.MTA.Port)
-			if err != nil {
-				t.MarkFailed("ERR %v", err)
+			if !r.runTestCase(dir, t) {
 				return false
 			}
-			if !t.TestCase.Decision.Compare(code, message, step) {
-				r.receiver.IgnoreMessages()
-				t.MarkFailed("NOK DECISION %s != %d %s @%s", t.TestCase.Decision, code, message, step)
-				continue
-			}
-			if t.TestCase.ExpectsOutput() {
-				output := r.receiver.WaitForMessage()
-				r.receiver.IgnoreMessages()
-				diff, ok := integration.DiffOutput(t.TestCase.Output, output)
-				if !ok {
-					if t.parent.MTA.HasTag("mta-sendmail") {
-						if integration.CompareOutputSendmail(t.TestCase.Output, output) {
-							t.MarkOk("OK (sendmail) %s", diff)
-							continue
-						}
-					}
-					t.MarkFailed("NOK OUTPUT %sRECEIVED OUTPUT\n%s", diff, output)
-					continue
-				}
-			}
-			t.MarkOk("OK")
 		}
-		prevDir.Stop()
+		activeDir.Stop()
+		activeDir = nil
 	}
 	numOk, numSkipped, numFailed := 0, 0, 0
 	for _, t := range r.config.Tests {
@@ -107,4 +83,78 @@ func (r *Runner) Run() bool {
 	}
 	LevelOneLogger.Printf("%d tests done: %d OK %d skipped %d failed", len(r.config.Tests), numOk, numSkipped, numFailed)
 	return numFailed == 0
+}
+
+func (r *Runner) runTestCase(dir *TestDir, t *TestCase) bool {
+	if err := t.Connect(dir.MTA.Port); err != nil {
+		t.MarkFailed("Connection error: %s", err.Error())
+		return false
+	}
+	quit := func() {
+		t.Quit()
+		LevelFourLogger.Printf("QUIT")
+	}
+	type sendmailFallback struct {
+		TransactionName string
+		Diff            string
+	}
+	var sendmail []sendmailFallback
+	LevelFourLogger.Printf("CONNECT")
+	for i, transaction := range t.TestCase.Transactions {
+		LevelFourLogger.Printf("%03d/%03d %s", i+1, len(t.TestCase.Transactions), transaction.Name)
+		if i > 0 {
+			time.Sleep(time.Second)
+		}
+		if transaction.ExpectsOutput() {
+			r.receiver.ExpectMessage()
+		} else {
+			r.receiver.IgnoreMessages()
+		}
+		code, message, step, err := t.Send(transaction.InputSteps)
+		if err != nil {
+			quit()
+			t.MarkFailed("ERR %v", err)
+			return false
+		}
+		if !transaction.Decision.Compare(code, message, step) {
+			r.receiver.IgnoreMessages()
+			quit()
+			t.MarkFailed("NOK DECISION expected %s got %d %q @%s", transaction.Decision, code, message, step)
+			return true
+		}
+		if transaction.ExpectsOutput() {
+			output := r.receiver.WaitForMessage()
+			r.receiver.IgnoreMessages()
+			diff, ok := integration.DiffOutput(transaction.Output, output)
+			if !ok {
+				if t.parent.MTA.HasTag("mta-sendmail") {
+					if integration.CompareOutputSendmail(transaction.Output, output) {
+						sendmail = append(sendmail, sendmailFallback{
+							TransactionName: transaction.Name,
+							Diff:            diff,
+						})
+
+						continue
+					}
+				}
+				quit()
+				t.MarkFailed("NOK OUTPUT %sRECEIVED OUTPUT\n%s", diff, output)
+				return true
+			}
+		}
+	}
+	quit()
+	if len(sendmail) > 0 {
+		diff := ""
+		for i, f := range sendmail {
+			diff += f.TransactionName + "\n" + f.Diff
+			if i < len(sendmail)-1 {
+				diff += "\n"
+			}
+		}
+		t.MarkOk("OK (sendmail) %s", diff)
+	} else {
+		t.MarkOk("OK")
+	}
+	return true
 }

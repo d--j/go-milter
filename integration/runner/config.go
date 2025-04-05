@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"go/build"
 	"io/fs"
-	"math"
+	"net"
 	"os"
 	"path"
 	"path/filepath"
@@ -18,7 +18,6 @@ import (
 )
 
 type Config struct {
-	MtaStartPort uint16
 	ReceiverPort uint16
 	MilterPort   uint16
 	ScratchDir   string
@@ -41,12 +40,6 @@ func ParseConfig() *Config {
 	}
 	mtaPath := ""
 	flag.StringVar(&mtaPath, "mta", path.Join(path.Dir(path.Dir(filename)), "mta"), "`path` to MTA definitions")
-	mtaPort := uint(34025)
-	flag.UintVar(&mtaPort, "mtaPort", 34025, "start `port` for the MTAs (1024 < port < 65536")
-	receiverPort := uint(34125)
-	flag.UintVar(&receiverPort, "receiverPort", 34125, "`port` for the next-hop SMTP server (1024 < port < 65536")
-	milterPort := uint(34126)
-	flag.UintVar(&milterPort, "milterPort", 34126, "`port` for test milter servers (1024 < port < 65536")
 	filter := ""
 	flag.StringVar(&filter, "filter", "", "regexp `pattern` to filter testcases")
 	mtaFilter := ""
@@ -72,11 +65,8 @@ func ParseConfig() *Config {
 		LevelOneLogger.Fatal(err)
 	}
 	config := Config{
-		MtaStartPort: uint16(mtaPort),
-		ReceiverPort: uint16(receiverPort),
-		MilterPort:   uint16(milterPort),
-		Filter:       filterRe,
-		ScratchDir:   "",
+		Filter:     filterRe,
+		ScratchDir: "",
 	}
 	tmpDir, err := os.MkdirTemp("", "scratch-*")
 	if err != nil {
@@ -88,10 +78,6 @@ func ParseConfig() *Config {
 	}
 	config.ScratchDir = tmpDir
 	if flag.NArg() == 0 {
-		flag.Usage()
-		os.Exit(1)
-	}
-	if mtaPort > math.MaxUint16 || mtaPort < 1025 || receiverPort > math.MaxUint16 || receiverPort < 1025 || milterPort > math.MaxUint16 || milterPort < 1025 {
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -112,23 +98,10 @@ func ParseConfig() *Config {
 			filteredMtas = append(filteredMtas, m)
 		}
 	}
-	if mtaPort+uint(len(filteredMtas)) > math.MaxUint16 {
-		LevelOneLogger.Fatal("too many MTAs, pick a lower -mtaPort")
-	}
-	if overlap(receiverPort, receiverPort, mtaPort, mtaPort+uint(len(filteredMtas))) {
-		LevelOneLogger.Fatal("-receiverPort and -mtaPort overlap")
-	}
-	if overlap(milterPort, milterPort, mtaPort, mtaPort+uint(len(filteredMtas))) {
-		LevelOneLogger.Fatal("-milterPort and -mtaPort overlap")
-	}
-	if overlap(receiverPort, receiverPort, milterPort, milterPort) {
-		LevelOneLogger.Fatal("-receiverPort and -milterPort overlap")
-	}
 	var dirs []*TestDir
 	var tests []*TestCase
 	for _, p := range filteredMtas {
-		mta, err := NewMTA(p, uint16(mtaPort), &config)
-		mtaPort++
+		mta, err := NewMTA(p, uint16(getAvailablePort()), &config)
 		if err != nil {
 			LevelOneLogger.Printf("SKIP %s: %s", p, err)
 			continue
@@ -178,6 +151,8 @@ func ParseConfig() *Config {
 		LevelOneLogger.Fatal("did not find any tests")
 	}
 
+	config.ReceiverPort = getAvailablePort()
+	config.MilterPort = getAvailablePort()
 	config.MTAs = mtas
 	config.TestDirs = dirs
 	config.Tests = tests
@@ -257,15 +232,12 @@ func expandTestDirs(in []string) (dirs []string, err error) {
 	return
 }
 
-func overlap(start1 uint, end1 uint, start2 uint, end2 uint) bool {
-	if end1 < start1 || end2 < start2 {
-		panic("end < start")
+func getAvailablePort() uint16 {
+	l, err := net.Listen("tcp", ":0")
+	if err != nil {
+		panic(err)
 	}
-	if start1 == start2 || end1 == end2 {
-		return true
-	}
-	if start1 > start2 {
-		return end2 >= start1
-	}
-	return end1 >= start2
+	port := l.Addr().(*net.TCPAddr).Port
+	_ = l.Close()
+	return uint16(port)
 }

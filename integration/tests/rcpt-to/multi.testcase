@@ -1,0 +1,14 @@
+# reject one
+TO <reject-one@example.com>
+TO <allowed@example.com>
+DECISION ACCEPT
+TO <allowed@example.com> *
+# change
+TO <change@example.com>
+DECISION ACCEPT
+TO <another@example.com> *
+# add
+TO <add@example.com>
+DECISION ACCEPT
+TO <add@example.com> *
+TO <another@example.com> *

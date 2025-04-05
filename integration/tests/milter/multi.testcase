@@ -1,0 +1,14 @@
+# reject one
+TO <other-spammer@example.com>
+TO <allowed@example.com>
+DECISION ACCEPT
+TO <allowed@example.com> *
+# reject
+FROM <reject-me@example.com>
+DECISION CUSTOM@*
+550-5.7.1 We do not like you
+550 5.7.1 very much, please go away
+# accept
+TO <allowed@example.com>
+DECISION ACCEPT
+TO <allowed@example.com> *

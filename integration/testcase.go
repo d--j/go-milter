@@ -134,7 +134,7 @@ func (d Decision) String() string {
 		return fmt.Sprintf("%dx@%s", d.Code, d.Step)
 	}
 	if d.Message != nil {
-		return fmt.Sprintf("%d %s@%s", d.Code, *d.Message, d.Step)
+		return fmt.Sprintf("%d %q@%s", d.Code, *d.Message, d.Step)
 	}
 	return fmt.Sprintf("%d@%s", d.Code, d.Step)
 }
@@ -169,41 +169,42 @@ func (o *Output) String() string {
 	return b.String()
 }
 
-type TestCase struct {
+type Transaction struct {
+	Name       string
 	InputSteps []*InputStep
 	Decision   *Decision
 	Output     *Output
 }
 
-func (c *TestCase) ExpectsOutput() bool {
+func (c *Transaction) ExpectsOutput() bool {
 	return c.Output != nil
 }
 
-var constantDate = time.Date(2023, time.January, 1, 12, 0, 0, 0, time.UTC)
+type undoReader struct {
+	*textproto.Reader
+	peekLine string
+	unread   bool
+}
 
-const (
-	stepHelo = 1 << iota
-	stepStarttls
-	stepAuth
-	stepFrom
-	stepRcpt
-	stepHdr
-	stepBody
-)
-
-func ParseTestCase(filename string) (*TestCase, error) {
-	f, err := os.Open(filename)
-	if err != nil {
-		return nil, err
+func (r *undoReader) ReadLine() (string, error) {
+	if r.unread {
+		r.unread = false
+		return r.peekLine, nil
 	}
-	defer func(f *os.File) {
-		_ = f.Close()
-	}(f)
-	r := textproto.NewReader(bufio.NewReader(f))
+	line, err := r.Reader.ReadLine()
+	r.peekLine = line
+	return line, err
+}
+func (r *undoReader) UnreadLine() {
+	r.unread = true
+}
+
+func parseTransaction(r *undoReader, skipAutoHelo bool) (*Transaction, error) {
 	steps := 0
 	var inputs []*InputStep
 	var decision *Decision
 	var output *Output
+loop:
 	for {
 		line, err := r.ReadLine()
 		if err == io.EOF {
@@ -235,7 +236,7 @@ func ParseTestCase(filename string) (*TestCase, error) {
 			if steps&stepStarttls != 0 {
 				return nil, errors.New("multiple STARTTLS are invalid")
 			}
-			if steps&stepHelo == 0 {
+			if !skipAutoHelo && steps&stepHelo == 0 {
 				inputs, steps, err = inputHelo("", inputs, steps)
 				if err != nil {
 					return nil, err
@@ -250,7 +251,7 @@ func ParseTestCase(filename string) (*TestCase, error) {
 			if steps&stepAuth != 0 {
 				return nil, errors.New("only one AUTH")
 			}
-			if steps&stepHelo == 0 {
+			if !skipAutoHelo && steps&stepHelo == 0 {
 				inputs, steps, err = inputHelo("", inputs, steps)
 				if err != nil {
 					return nil, err
@@ -278,7 +279,7 @@ func ParseTestCase(filename string) (*TestCase, error) {
 				}
 				output.From = addr
 			} else {
-				if steps&stepHelo == 0 {
+				if !skipAutoHelo && steps&stepHelo == 0 {
 					inputs, steps, err = inputHelo("", inputs, steps)
 					if err != nil {
 						return nil, err
@@ -300,7 +301,7 @@ func ParseTestCase(filename string) (*TestCase, error) {
 				}
 				output.To = append(output.To, addr)
 			} else {
-				if steps&stepHelo == 0 {
+				if !skipAutoHelo && steps&stepHelo == 0 {
 					inputs, steps, err = inputHelo("", inputs, steps)
 					if err != nil {
 						return nil, err
@@ -324,7 +325,8 @@ func ParseTestCase(filename string) (*TestCase, error) {
 			if steps&stepHdr != 0 {
 				return nil, errors.New("RESET after HEADER does not make sense")
 			}
-			steps = steps & stepStarttls
+			// reset step back to before MAIL FROM
+			steps = steps &^ stepRcpt &^ stepFrom
 			inputs = append(inputs, &InputStep{What: "RESET"})
 		case line == "HEADER":
 			if decision != nil {
@@ -340,7 +342,7 @@ func ParseTestCase(filename string) (*TestCase, error) {
 				}
 				output.Header = normalizeHeader(output.Header)
 			} else {
-				if steps&stepHelo == 0 {
+				if !skipAutoHelo && steps&stepHelo == 0 {
 					inputs, steps, err = inputHelo("", inputs, steps)
 					if err != nil {
 						return nil, err
@@ -377,7 +379,7 @@ func ParseTestCase(filename string) (*TestCase, error) {
 				}
 				output.Body = normalizeBody(output.Body)
 			} else {
-				if steps&stepHelo == 0 {
+				if !skipAutoHelo && steps&stepHelo == 0 {
 					inputs, steps, err = inputHelo("", inputs, steps)
 					if err != nil {
 						return nil, err
@@ -410,7 +412,7 @@ func ParseTestCase(filename string) (*TestCase, error) {
 			if decision != nil {
 				return nil, errors.New("only one DECISION line")
 			}
-			if steps&stepHelo == 0 {
+			if !skipAutoHelo && steps&stepHelo == 0 {
 				inputs, steps, err = inputHelo("", inputs, steps)
 				if err != nil {
 					return nil, err
@@ -444,6 +446,9 @@ func ParseTestCase(filename string) (*TestCase, error) {
 			if err != nil {
 				return nil, err
 			}
+		case strings.HasPrefix(line, "#"):
+			r.UnreadLine()
+			break loop
 		default:
 			return nil, fmt.Errorf("parsing error: unknown line %q", line)
 		}
@@ -453,12 +458,76 @@ func ParseTestCase(filename string) (*TestCase, error) {
 		return nil, errors.New("no DECISION line specified")
 	}
 
-	return &TestCase{
+	return &Transaction{
 		InputSteps: inputs,
 		Decision:   decision,
 		Output:     output,
 	}, nil
 }
+
+type TestCase struct {
+	Transactions []*Transaction
+}
+
+func ParseTestCase(filename string) (*TestCase, error) {
+	f, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer func(f *os.File) {
+		_ = f.Close()
+	}(f)
+	r := undoReader{Reader: textproto.NewReader(bufio.NewReader(f))}
+	var transactions []*Transaction
+	for {
+		line, err := r.ReadLine()
+		if err == io.EOF {
+			if line != "" {
+				return nil, fmt.Errorf("parsing error: dangling %q", line)
+			}
+			break
+		}
+		transactionName := ""
+		if strings.HasPrefix(line, "#") {
+			transactionName = strings.TrimSpace(strings.TrimPrefix(line, "#"))
+			if transactionName == "" {
+				transactionName = fmt.Sprintf("Transaction #%d", len(transactions)+1)
+			}
+		} else {
+			if len(transactions) > 0 {
+				return nil, fmt.Errorf("parsing error: a new transaction must start with a line `# transaction name`")
+			}
+			r.UnreadLine()
+			transactionName = "Transaction #1"
+		}
+		transaction, err := parseTransaction(&r, len(transactions) > 0)
+		if err != nil {
+			return nil, fmt.Errorf("parsing %s: %w", transactionName, err)
+		}
+		transaction.Name = transactionName
+		transactions = append(transactions, transaction)
+	}
+
+	if len(transactions) == 0 {
+		return nil, errors.New("test case is empty")
+	}
+
+	return &TestCase{
+		Transactions: transactions,
+	}, nil
+}
+
+var constantDate = time.Date(2023, time.January, 1, 12, 0, 0, 0, time.UTC)
+
+const (
+	stepHelo = 1 << iota
+	stepStarttls
+	stepAuth
+	stepFrom
+	stepRcpt
+	stepHdr
+	stepBody
+)
 
 func inputHelo(input string, inputs []*InputStep, steps int) ([]*InputStep, int, error) {
 	if steps&stepFrom != 0 {
@@ -528,7 +597,7 @@ func normalizeBody(in []byte) []byte {
 	return b
 }
 
-func inputHdr(r *textproto.Reader, inputs []*InputStep, steps int) ([]*InputStep, int, error) {
+func inputHdr(r *undoReader, inputs []*InputStep, steps int) ([]*InputStep, int, error) {
 	if steps&stepHdr != 0 {
 		return nil, steps, errors.New("no multiple HEADER")
 	}
@@ -568,7 +637,7 @@ func inputHdr(r *textproto.Reader, inputs []*InputStep, steps int) ([]*InputStep
 	return inputs, steps, nil
 }
 
-func inputBody(r *textproto.Reader, inputs []*InputStep, steps int) ([]*InputStep, int, error) {
+func inputBody(r *undoReader, inputs []*InputStep, steps int) ([]*InputStep, int, error) {
 	if steps&stepBody != 0 {
 		return nil, steps, errors.New("no multiple BODY")
 	}
@@ -591,7 +660,7 @@ func inputBody(r *textproto.Reader, inputs []*InputStep, steps int) ([]*InputSte
 	return inputs, steps, nil
 }
 
-func parseDecision(decisionStr string, r *textproto.Reader) (*Decision, error) {
+func parseDecision(decisionStr string, r *undoReader) (*Decision, error) {
 	decisionStr = strings.TrimSpace(decisionStr)
 	parts := strings.Split(decisionStr, "@")
 	if len(parts) > 2 {
