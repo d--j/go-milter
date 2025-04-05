@@ -495,7 +495,7 @@ func ParseTestCase(filename string) (*TestCase, error) {
 			}
 		} else {
 			if len(transactions) > 0 {
-				return nil, fmt.Errorf("parsing error: a new transation must start wit a line `# transaction name`")
+				return nil, fmt.Errorf("parsing error: a new transaction must start with a line `# transaction name`")
 			}
 			r.UnreadLine()
 			transactionName = "Transaction #1"
