@@ -19,7 +19,7 @@ const (
 	StageEOM                              // SMFIM_EOM
 	StageEOH                              // SMFIM_EOH
 	StageEndMarker                        // is used for command level macros for Abort, Unknown and Header commands
-	StageNotFoundMarker                   // identifies that a macro was not found
+	stageNotFoundMarker                   // identifies that a macro was not found. Always needs to be StageEndMarker + 1.
 )
 
 type MacroName = string
@@ -51,7 +51,7 @@ const (
 	MacroMailMailer        MacroName = "{mail_mailer}"        // the delivery agent for this MAIL FROM (e.g. esmtp, lmtp)
 	MacroMailHost          MacroName = "{mail_host}"          // the domain part of the MAIL FROM address
 	MacroMailAddr          MacroName = "{mail_addr}"          // the MAIL FROM address (only the address without <>)
-	MacroRcptMailer        MacroName = "{rcpt_mailer}"        // MacroRcptMailer holds the delivery agent for the current RCPT TO address
+	MacroRcptMailer        MacroName = "{rcpt_mailer}"        // MacroRcptMailer holds the delivery agent/next hop for the current RCPT TO address. E.g. smtp, local.
 	MacroRcptHost          MacroName = "{rcpt_host}"          // The domain part of the RCPT TO address
 	MacroRcptAddr          MacroName = "{rcpt_addr}"          // the RCPT TO address (only the address without <>)
 )
@@ -120,7 +120,7 @@ func (m *MacroBag) GetEx(name MacroName) (value string, ok bool) {
 				value = current.Format(time.RFC822Z)
 			case MacroDateSecondsCurrent:
 				value = fmt.Sprintf("%d", current.Unix())
-			case MacroDateANSICCurrent:
+			default:
 				value = current.Format(time.ANSIC)
 			}
 		}
@@ -166,7 +166,7 @@ type macrosStages struct {
 
 func newMacroStages() *macrosStages {
 	return &macrosStages{
-		byStages: make([]map[MacroName]string, StageEndMarker+1),
+		byStages: make([]map[MacroName]string, stageNotFoundMarker),
 	}
 }
 
@@ -179,7 +179,7 @@ func (s *macrosStages) GetMacroEx(name MacroName) (value string, stageFound Macr
 			}
 		}
 		if i == StageConnect {
-			return "", StageNotFoundMarker
+			return "", stageNotFoundMarker
 		}
 		i--
 	}
@@ -254,7 +254,7 @@ func (s *macrosStages) DelStageAndAbove(stage MacroStage) {
 		stages = []MacroStage{StageEOH, StageEOM, StageEndMarker}
 	case StageEOM:
 		stages = []MacroStage{StageEOM, StageEndMarker}
-	case StageEndMarker, StageNotFoundMarker:
+	case StageEndMarker, stageNotFoundMarker:
 		stages = []MacroStage{StageEndMarker}
 	}
 	for _, st := range stages {

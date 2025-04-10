@@ -47,7 +47,20 @@ func (t *TestDir) Start() error {
 	if err := Build(t.Path, exe); err != nil {
 		return err
 	}
-	t.cmd = exec.Command(exe, "-network", "tcp", "-address", fmt.Sprintf(":%d", t.Config.MilterPort), "-tags", strings.Join(t.MTA.tags, " "))
+	expectedTransactions := len(t.Tests)
+	// mock smtp creates a new connection after STARTTLS
+	if t.MTA.HasTag("mta-mock") {
+		for _, test := range t.Tests {
+			for _, trx := range test.TestCase.Transactions {
+				for _, step := range trx.InputSteps {
+					if step.What == "STARTTLS" {
+						expectedTransactions++
+					}
+				}
+			}
+		}
+	}
+	t.cmd = exec.Command(exe, "-network", "tcp", "-address", fmt.Sprintf(":%d", t.Config.MilterPort), "-tags", strings.Join(t.MTA.tags, " "), "-expected-backends", fmt.Sprintf("%d", expectedTransactions))
 	ctx, cancel := context.WithCancel(context.Background())
 	t.wg.Add(1)
 	go func() {
@@ -58,10 +71,11 @@ func (t *TestDir) Start() error {
 		t.m.Unlock()
 		failed := !IsExpectedExitErr(err)
 		if failed {
-			LevelTwoLogger.Print(err)
+			LevelTwoLogger.Printf("DIR %s exit error: %s", t.Path, err.Error())
+			t.MarkFailedTest()
 		}
 		if failed || failedTest {
-			LevelTwoLogger.Printf("DIR %s\n%s", t.Path, b)
+			LevelTwoLogger.Printf("DIR %s output\n%s", t.Path, b)
 		}
 		t.wg.Done()
 		cancel()

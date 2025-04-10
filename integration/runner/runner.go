@@ -30,6 +30,7 @@ func (r *Runner) Run() bool {
 			prevMta.Stop()
 		}
 	}()
+	failedDir := false
 	tests := len(r.config.Tests)
 	i := 0
 	for _, dir := range r.config.TestDirs {
@@ -66,7 +67,14 @@ func (r *Runner) Run() bool {
 			}
 		}
 		activeDir.Stop()
+		if activeDir.failedTest {
+			failedDir = true
+		}
 		activeDir = nil
+	}
+	if prevMta != nil {
+		prevMta.Stop()
+		prevMta = nil
 	}
 	numOk, numSkipped, numFailed := 0, 0, 0
 	for _, t := range r.config.Tests {
@@ -82,7 +90,7 @@ func (r *Runner) Run() bool {
 		}
 	}
 	LevelOneLogger.Printf("%d tests done: %d OK %d skipped %d failed", len(r.config.Tests), numOk, numSkipped, numFailed)
-	return numFailed == 0
+	return numFailed == 0 && !failedDir
 }
 
 func (r *Runner) runTestCase(dir *TestDir, t *TestCase) bool {

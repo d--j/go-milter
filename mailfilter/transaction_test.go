@@ -5,14 +5,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/d--j/go-milter/internal/body"
-	"github.com/d--j/go-milter/internal/header"
 	"io"
 	"reflect"
 	"strings"
 	"testing"
 
-	"github.com/d--j/go-milter/internal/wire"
+	"github.com/d--j/go-milter"
+	"github.com/d--j/go-milter/internal/body"
+	"github.com/d--j/go-milter/internal/header"
 	"github.com/d--j/go-milter/mailfilter/addr"
 	"github.com/emersion/go-message/mail"
 )
@@ -132,26 +132,20 @@ func TestTransaction_HasRcptTo(t1 *testing.T) {
 	}
 }
 
-func outputMessages(messages []*wire.Message) string {
+func outputMessages(messages []*milter.ModifyAction) string {
 	b := strings.Builder{}
 	for i, msg := range messages {
-		b.WriteString(fmt.Sprintf("%02d %c %q\n", i, msg.Code, msg.Data))
+		b.WriteString(fmt.Sprintf("%02d %s\n", i, msg))
 	}
 	return b.String()
 }
 
 func TestTransaction_sendModifications(t1 *testing.T) {
 	expectErr := errors.New("error")
-	writeErr := func(_ *wire.Message) error {
-		return expectErr
-	}
-	mod := func(act wire.ModifyActCode, data []byte) *wire.Message {
-		return &wire.Message{Code: wire.Code(act), Data: data}
-	}
 	tests := []struct {
 		name    string
 		decider DecisionModificationFunc
-		want    []*wire.Message
+		want    []*milter.ModifyAction
 		wantErr bool
 	}{
 		{"noop", func(_ context.Context, _ Trx) (Decision, error) {
@@ -160,49 +154,49 @@ func TestTransaction_sendModifications(t1 *testing.T) {
 		{"mail-from", func(_ context.Context, trx Trx) (Decision, error) {
 			trx.ChangeMailFrom("root@localhost", "A=B")
 			return Accept, nil
-		}, []*wire.Message{mod(wire.ActChangeFrom, []byte("<root@localhost>\u0000A=B\u0000"))}, false},
+		}, []*milter.ModifyAction{{Type: milter.ActionChangeFrom, From: "root@localhost", FromArgs: "A=B"}}, false},
 		{"mail-from-err", func(ctx context.Context, trx Trx) (Decision, error) {
+			ctx.Value("s").(*mockSession).actErr = expectErr
 			trx.ChangeMailFrom("root@localhost", "")
-			ctx.Value("s").(*mockSession).WritePacket = writeErr
 			return Accept, nil
 		}, nil, true},
 		{"del-rcpt", func(_ context.Context, trx Trx) (Decision, error) {
 			trx.DelRcptTo("root@localhost")
 			return Accept, nil
-		}, []*wire.Message{mod(wire.ActDelRcpt, []byte("<root@localhost>\u0000"))}, false},
+		}, []*milter.ModifyAction{{Type: milter.ActionDelRcpt, Rcpt: "root@localhost"}}, false},
 		{"del-rcpt-noop", func(_ context.Context, trx Trx) (Decision, error) {
 			trx.DelRcptTo("someone@localhost")
 			return Accept, nil
 		}, nil, false},
 		{"del-rcpt-err", func(ctx context.Context, trx Trx) (Decision, error) {
+			ctx.Value("s").(*mockSession).actErr = expectErr
 			trx.DelRcptTo("root@localhost")
-			ctx.Value("s").(*mockSession).WritePacket = writeErr
 			return Accept, nil
 		}, nil, true},
 		{"add-rcpt", func(_ context.Context, trx Trx) (Decision, error) {
 			trx.AddRcptTo("someone@localhost", "")
 			return Accept, nil
-		}, []*wire.Message{mod(wire.ActAddRcpt, []byte("<someone@localhost>\u0000"))}, false},
+		}, []*milter.ModifyAction{{Type: milter.ActionAddRcpt, Rcpt: "someone@localhost"}}, false},
 		{"add-rcpt-par", func(_ context.Context, trx Trx) (Decision, error) {
 			trx.AddRcptTo("someone@localhost", "A=B")
 			return Accept, nil
-		}, []*wire.Message{mod(wire.ActAddRcptPar, []byte("<someone@localhost>\u0000A=B\u0000"))}, false},
+		}, []*milter.ModifyAction{{Type: milter.ActionAddRcpt, Rcpt: "someone@localhost", RcptArgs: "A=B"}}, false},
 		{"add-rcpt-noop", func(_ context.Context, trx Trx) (Decision, error) {
 			trx.AddRcptTo("root@localhost", "")
 			return Accept, nil
 		}, nil, false},
 		{"add-rcpt-err", func(ctx context.Context, trx Trx) (Decision, error) {
+			ctx.Value("s").(*mockSession).actErr = expectErr
 			trx.AddRcptTo("someone@localhost", "")
-			ctx.Value("s").(*mockSession).WritePacket = writeErr
 			return Accept, nil
 		}, nil, true},
 		{"replace-rcpt", func(_ context.Context, trx Trx) (Decision, error) {
 			trx.DelRcptTo("root@localhost")
 			trx.AddRcptTo("someone@localhost", "")
 			return Accept, nil
-		}, []*wire.Message{
-			mod(wire.ActDelRcpt, []byte("<root@localhost>\u0000")),
-			mod(wire.ActAddRcpt, []byte("<someone@localhost>\u0000")),
+		}, []*milter.ModifyAction{
+			{Type: milter.ActionDelRcpt, Rcpt: "root@localhost"},
+			{Type: milter.ActionAddRcpt, Rcpt: "someone@localhost"},
 		}, false},
 		{"replace-body", func(_ context.Context, trx Trx) (Decision, error) {
 			got, _ := io.ReadAll(trx.Body())
@@ -211,46 +205,46 @@ func TestTransaction_sendModifications(t1 *testing.T) {
 			}
 			trx.ReplaceBody(io.NopCloser(strings.NewReader("test")))
 			return Accept, nil
-		}, []*wire.Message{
-			mod(wire.ActReplBody, []byte("test")),
+		}, []*milter.ModifyAction{
+			{Type: milter.ActionReplaceBody, Body: []byte("test")},
 		}, false},
 		{"replace-body-buffered", func(_ context.Context, trx Trx) (Decision, error) {
 			trx.ReplaceBody(strings.NewReader("test"))
 			trx.Data()
 			return Accept, nil
-		}, []*wire.Message{
-			mod(wire.ActReplBody, []byte("test")),
+		}, []*milter.ModifyAction{
+			{Type: milter.ActionReplaceBody, Body: []byte("test")},
 		}, false},
 		{"replace-body-err", func(ctx context.Context, trx Trx) (Decision, error) {
+			ctx.Value("s").(*mockSession).actErr = expectErr
 			trx.ReplaceBody(io.NopCloser(strings.NewReader("test")))
-			ctx.Value("s").(*mockSession).WritePacket = writeErr
 			return Accept, nil
 		}, nil, true},
 		{"replace-body-buffered-err", func(ctx context.Context, trx Trx) (Decision, error) {
+			ctx.Value("s").(*mockSession).actErr = expectErr
 			trx.ReplaceBody(io.NopCloser(strings.NewReader("test")))
 			trx.Data()
-			ctx.Value("s").(*mockSession).WritePacket = writeErr
 			return Accept, nil
 		}, nil, true},
 		{"add-header", func(_ context.Context, trx Trx) (Decision, error) {
 			trx.Headers().Add("X-Test", "1")
 			return Accept, nil
-		}, []*wire.Message{
-			mod(wire.ActInsertHeader, []byte("\u0000\u0000\u0000\x68X-Test\u0000 1\u0000")),
+		}, []*milter.ModifyAction{
+			{Type: milter.ActionInsertHeader, HeaderIndex: 104, HeaderName: "X-Test", HeaderValue: " 1"},
 		}, false},
 		{"prepend-header", func(_ context.Context, trx Trx) (Decision, error) {
 			f := trx.Headers().Fields()
 			f.Next()
 			f.InsertBefore("X-Test", "1")
 			return Accept, nil
-		}, []*wire.Message{
-			mod(wire.ActInsertHeader, []byte("\u0000\u0000\u0000\u0001X-Test\u0000 1\u0000")),
+		}, []*milter.ModifyAction{
+			{Type: milter.ActionInsertHeader, HeaderIndex: 1, HeaderName: "X-Test", HeaderValue: " 1"},
 		}, false},
 		{"prepend-header-err", func(ctx context.Context, trx Trx) (Decision, error) {
+			ctx.Value("s").(*mockSession).actErr = expectErr
 			f := trx.Headers().Fields()
 			f.Next()
 			f.InsertBefore("X-Test", "1")
-			ctx.Value("s").(*mockSession).WritePacket = writeErr
 			return Accept, nil
 		}, nil, true},
 		{"change-header", func(_ context.Context, trx Trx) (Decision, error) {
@@ -258,23 +252,23 @@ func TestTransaction_sendModifications(t1 *testing.T) {
 			f.Next()
 			f.SetAddressList([]*mail.Address{{Address: "root@localhost", Name: "root"}})
 			return Accept, nil
-		}, []*wire.Message{
-			mod(wire.ActChangeHeader, []byte("\u0000\u0000\u0000\u0001From\u0000 \"root\" <root@localhost>\u0000")),
+		}, []*milter.ModifyAction{
+			{Type: milter.ActionChangeHeader, HeaderIndex: 1, HeaderName: "From", HeaderValue: " \"root\" <root@localhost>"},
 		}, false},
 		{"change-header-err", func(ctx context.Context, trx Trx) (Decision, error) {
+			ctx.Value("s").(*mockSession).actErr = expectErr
 			f := trx.Headers().Fields()
 			f.Next()
 			f.SetAddressList([]*mail.Address{{Address: "root@localhost", Name: "root"}})
-			ctx.Value("s").(*mockSession).WritePacket = writeErr
 			return Accept, nil
 		}, nil, true},
 		{"quarantine", func(ctx context.Context, trx Trx) (Decision, error) {
 			return QuarantineResponse("test"), nil
-		}, []*wire.Message{
-			mod(wire.ActQuarantine, []byte("test\u0000")),
+		}, []*milter.ModifyAction{
+			{Type: milter.ActionQuarantine, Reason: "test"},
 		}, false},
 		{"quarantine-err", func(ctx context.Context, trx Trx) (Decision, error) {
-			ctx.Value("s").(*mockSession).WritePacket = writeErr
+			ctx.Value("s").(*mockSession).actErr = expectErr
 			return QuarantineResponse("test"), nil
 		}, nil, true},
 	}
@@ -282,12 +276,12 @@ func TestTransaction_sendModifications(t1 *testing.T) {
 		t1.Run(tt.name, func(t1 *testing.T) {
 			b, s := newMockBackend()
 			t1.Cleanup(b.transaction.cleanup)
-			_, _ = b.MailFrom("", "", s.newModifier())
-			_, _ = b.RcptTo("root@localhost", "", s.newModifier())
-			_, _ = b.Header("From", " <>", s.newModifier())
-			_, _ = b.Header("To", " <root@localhost>", s.newModifier())
-			_, _ = b.Header("Subject", " test", s.newModifier())
-			_, _ = b.BodyChunk([]byte("body"), s.newModifier())
+			_, _ = b.MailFrom("", "", s.mod)
+			_, _ = b.RcptTo("root@localhost", "", s.mod)
+			_, _ = b.Header("From", " <>", s.mod)
+			_, _ = b.Header("To", " <root@localhost>", s.mod)
+			_, _ = b.Header("Subject", " test", s.mod)
+			_, _ = b.BodyChunk([]byte("body"), s.mod)
 			b.transaction.makeDecision(context.WithValue(context.Background(), "s", s), tt.decider)
 			if b.transaction.decisionErr != nil {
 				t1.Fatal(b.transaction.decisionErr)
@@ -302,12 +296,12 @@ func TestTransaction_sendModifications(t1 *testing.T) {
 					t1.Errorf("hasModifications() = %v, want %v", gotHas, expectHas)
 				}
 			}
-			if err := b.transaction.sendModifications(s.newModifier()); (err != nil) != tt.wantErr {
+			if err := b.transaction.sendModifications(s.mod); (err != nil) != tt.wantErr {
 				t1.Errorf("sendModifications() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			got := s.modifications
 			if !reflect.DeepEqual(got, tt.want) {
-				t1.Errorf("sendModifications() sent %v, want %v", outputMessages(got), outputMessages(tt.want))
+				t1.Errorf("sendModifications() sent\n%swant\n%s", outputMessages(got), outputMessages(tt.want))
 			}
 		})
 	}

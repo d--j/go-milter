@@ -212,6 +212,7 @@ func TestMacroReader_GetEx(t *testing.T) {
 		{"QueueID middle", &macrosStages{[]map[MacroName]string{nil, nil, nil, {MacroQueueId: "123"}, nil, nil, nil, nil}}, MacroQueueId, "123", true},
 		{"QueueID nil", &macrosStages{[]map[MacroName]string{nil, nil, nil, nil, nil, nil, nil, nil}}, MacroQueueId, "", false},
 		{"QueueID priority", &macrosStages{[]map[MacroName]string{{MacroQueueId: "456"}, nil, nil, nil, nil, nil, {MacroQueueId: "123"}, nil}}, MacroQueueId, "123", true},
+		{"err", nil, MacroQueueId, "", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -351,7 +352,7 @@ func Test_macrosStages_GetMacroEx(t *testing.T) {
 		wantValue      string
 		wantStageFound MacroStage
 	}{
-		{"empty", fields{[]map[MacroName]string{nil, nil, nil, nil, nil, nil, nil, nil}}, args{MacroQueueId}, "", StageNotFoundMarker},
+		{"empty", fields{[]map[MacroName]string{nil, nil, nil, nil, nil, nil, nil, nil}}, args{MacroQueueId}, "", stageNotFoundMarker},
 		{"first", fields{[]map[MacroName]string{{MacroQueueId: "123"}, nil, nil, nil, nil, nil, nil, nil}}, args{MacroQueueId}, "123", StageConnect},
 		{"last", fields{[]map[MacroName]string{nil, nil, nil, nil, nil, nil, nil, {MacroQueueId: "123"}}}, args{MacroQueueId}, "123", StageEndMarker},
 		{"last1", fields{[]map[MacroName]string{{MacroQueueId: "123"}, nil, nil, nil, nil, nil, nil, {MacroQueueId: "123"}}}, args{MacroQueueId}, "123", StageEndMarker},
@@ -384,19 +385,28 @@ func Test_macrosStages_SetMacro(t *testing.T) {
 		value string
 	}
 	tests := []struct {
-		name   string
-		fields fields
-		args   args
+		name       string
+		fields     fields
+		args       args
+		wantsPanic bool
 	}{
-		{"nil", fields{[]map[MacroName]string{nil, nil, nil, nil, nil, nil, nil}}, args{StageConnect, MacroQueueId, "123"}},
-		{"empty", fields{[]map[MacroName]string{{}, nil, nil, nil, nil, nil, nil}}, args{StageConnect, MacroQueueId, "123"}},
-		{"overwrite", fields{[]map[MacroName]string{{MacroQueueId: "456"}, nil, nil, nil, nil, nil, nil}}, args{StageConnect, MacroQueueId, "123"}},
-		{"last", fields{[]map[MacroName]string{{}, nil, nil, nil, nil, nil, {}}}, args{StageEOM, MacroQueueId, "123"}},
+		{"nil", fields{[]map[MacroName]string{nil, nil, nil, nil, nil, nil, nil}}, args{StageConnect, MacroQueueId, "123"}, false},
+		{"empty", fields{[]map[MacroName]string{{}, nil, nil, nil, nil, nil, nil}}, args{StageConnect, MacroQueueId, "123"}, false},
+		{"overwrite", fields{[]map[MacroName]string{{MacroQueueId: "456"}, nil, nil, nil, nil, nil, nil}}, args{StageConnect, MacroQueueId, "123"}, false},
+		{"last", fields{[]map[MacroName]string{{}, nil, nil, nil, nil, nil, {}}}, args{StageEOM, MacroQueueId, "123"}, false},
+		{"panic", fields{[]map[MacroName]string{{}}}, args{StageEOM, MacroQueueId, "123"}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ltt := tt
 			t.Parallel()
+			if ltt.wantsPanic {
+				defer func() {
+					if r := recover(); r == nil {
+						t.Errorf("SetStageMap() did not panic")
+					}
+				}()
+			}
 			s := &macrosStages{
 				byStages: ltt.fields.byStages,
 			}
@@ -417,21 +427,31 @@ func Test_macrosStages_SetStage(t *testing.T) {
 		kv    []string
 	}
 	tests := []struct {
-		name   string
-		fields fields
-		args   args
-		wants  map[MacroName]string
+		name       string
+		fields     fields
+		args       args
+		wants      map[MacroName]string
+		wantsPanic bool
 	}{
-		{"empty", fields{[]map[MacroName]string{nil, nil, nil, nil, nil, nil, nil}}, args{StageConnect, []string{}}, map[MacroName]string{}},
-		{"simple nil", fields{[]map[MacroName]string{nil, nil, nil, nil, nil, nil, nil}}, args{StageConnect, []string{MacroQueueId, "123"}}, map[MacroName]string{MacroQueueId: "123"}},
-		{"simple empty", fields{[]map[MacroName]string{{}, {}, {}, {}, {}, {}, {}}}, args{StageConnect, []string{MacroQueueId, "123"}}, map[MacroName]string{MacroQueueId: "123"}},
-		{"multiple", fields{[]map[MacroName]string{{}, {}, {}, {}, {}, {}, {}}}, args{StageConnect, []string{MacroQueueId, "123", MacroAuthAuthen, "123"}}, map[MacroName]string{MacroQueueId: "123", MacroAuthAuthen: "123"}},
-		{"overwrite", fields{[]map[MacroName]string{{MacroAuthAuthen: "123"}, {}, {}, {}, {}, {}, {}}}, args{StageConnect, []string{MacroQueueId, "123"}}, map[MacroName]string{MacroQueueId: "123"}},
+		{"empty", fields{[]map[MacroName]string{nil, nil, nil, nil, nil, nil, nil}}, args{StageConnect, []string{}}, map[MacroName]string{}, false},
+		{"simple nil", fields{[]map[MacroName]string{nil, nil, nil, nil, nil, nil, nil}}, args{StageConnect, []string{MacroQueueId, "123"}}, map[MacroName]string{MacroQueueId: "123"}, false},
+		{"simple empty", fields{[]map[MacroName]string{{}, {}, {}, {}, {}, {}, {}}}, args{StageConnect, []string{MacroQueueId, "123"}}, map[MacroName]string{MacroQueueId: "123"}, false},
+		{"multiple", fields{[]map[MacroName]string{{}, {}, {}, {}, {}, {}, {}}}, args{StageConnect, []string{MacroQueueId, "123", MacroAuthAuthen, "123"}}, map[MacroName]string{MacroQueueId: "123", MacroAuthAuthen: "123"}, false},
+		{"overwrite", fields{[]map[MacroName]string{{MacroAuthAuthen: "123"}, {}, {}, {}, {}, {}, {}}}, args{StageConnect, []string{MacroQueueId, "123"}}, map[MacroName]string{MacroQueueId: "123"}, false},
+		{"panic1", fields{[]map[MacroName]string{{MacroAuthAuthen: "123"}, {}, {}, {}, {}, {}, {}}}, args{StageConnect, []string{MacroQueueId}}, nil, true},
+		{"panic2", fields{[]map[MacroName]string{{MacroAuthAuthen: "123"}}}, args{StageMail, []string{MacroQueueId, "123"}}, nil, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ltt := tt
 			t.Parallel()
+			if ltt.wantsPanic {
+				defer func() {
+					if r := recover(); r == nil {
+						t.Errorf("SetStageMap() did not panic")
+					}
+				}()
+			}
 			s := &macrosStages{
 				byStages: ltt.fields.byStages,
 			}
@@ -452,21 +472,30 @@ func Test_macrosStages_SetStageMap(t *testing.T) {
 		kv    map[MacroName]string
 	}
 	tests := []struct {
-		name   string
-		fields fields
-		args   args
-		wants  map[MacroName]string
+		name       string
+		fields     fields
+		args       args
+		wants      map[MacroName]string
+		wantsPanic bool
 	}{
-		{"empty", fields{[]map[MacroName]string{nil, nil, nil, nil, nil, nil, nil}}, args{StageConnect, map[MacroName]string{}}, map[MacroName]string{}},
-		{"simple nil", fields{[]map[MacroName]string{nil, nil, nil, nil, nil, nil, nil}}, args{StageConnect, map[MacroName]string{MacroQueueId: "123"}}, map[MacroName]string{MacroQueueId: "123"}},
-		{"simple empty", fields{[]map[MacroName]string{{}, {}, {}, {}, {}, {}, {}}}, args{StageConnect, map[MacroName]string{MacroQueueId: "123"}}, map[MacroName]string{MacroQueueId: "123"}},
-		{"multiple", fields{[]map[MacroName]string{{}, {}, {}, {}, {}, {}, {}}}, args{StageConnect, map[MacroName]string{MacroQueueId: "123", MacroAuthAuthen: "123"}}, map[MacroName]string{MacroQueueId: "123", MacroAuthAuthen: "123"}},
-		{"overwrite", fields{[]map[MacroName]string{{MacroAuthAuthen: "123"}, {}, {}, {}, {}, {}, {}}}, args{StageConnect, map[MacroName]string{MacroQueueId: "123"}}, map[MacroName]string{MacroQueueId: "123"}},
+		{"empty", fields{[]map[MacroName]string{nil, nil, nil, nil, nil, nil, nil}}, args{StageConnect, map[MacroName]string{}}, map[MacroName]string{}, false},
+		{"simple nil", fields{[]map[MacroName]string{nil, nil, nil, nil, nil, nil, nil}}, args{StageConnect, map[MacroName]string{MacroQueueId: "123"}}, map[MacroName]string{MacroQueueId: "123"}, false},
+		{"simple empty", fields{[]map[MacroName]string{{}, {}, {}, {}, {}, {}, {}}}, args{StageConnect, map[MacroName]string{MacroQueueId: "123"}}, map[MacroName]string{MacroQueueId: "123"}, false},
+		{"multiple", fields{[]map[MacroName]string{{}, {}, {}, {}, {}, {}, {}}}, args{StageConnect, map[MacroName]string{MacroQueueId: "123", MacroAuthAuthen: "123"}}, map[MacroName]string{MacroQueueId: "123", MacroAuthAuthen: "123"}, false},
+		{"overwrite", fields{[]map[MacroName]string{{MacroAuthAuthen: "123"}, {}, {}, {}, {}, {}, {}}}, args{StageConnect, map[MacroName]string{MacroQueueId: "123"}}, map[MacroName]string{MacroQueueId: "123"}, false},
+		{"panic", fields{[]map[MacroName]string{{MacroAuthAuthen: "123"}}}, args{StageData, map[MacroName]string{MacroQueueId: "123"}}, nil, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ltt := tt
 			t.Parallel()
+			if ltt.wantsPanic {
+				defer func() {
+					if r := recover(); r == nil {
+						t.Errorf("SetStageMap() did not panic")
+					}
+				}()
+			}
 			s := &macrosStages{
 				byStages: ltt.fields.byStages,
 			}

@@ -17,9 +17,9 @@ type ExampleBackend struct {
 	milter.NoOpMilter
 }
 
-func (b *ExampleBackend) RcptTo(rcptTo string, esmtpArgs string, m *milter.Modifier) (*milter.Response, error) {
-	// reject the mail when it goes to other-spammer@example.com and is a local delivery
-	if rcptTo == "other-spammer@example.com" && m.Macros.Get(milter.MacroRcptMailer) == "local" {
+func (b *ExampleBackend) RcptTo(rcptTo string, esmtpArgs string, m milter.Modifier) (*milter.Response, error) {
+	// reject the recipient when it goes to other-spammer@example.com and is a local delivery
+	if rcptTo == "other-spammer@example.com" && m.Get(milter.MacroRcptMailer) == "local" {
 		return milter.RejectWithCodeAndReason(550, "5.7.1 We do not like you\nvery much, please go away")
 	}
 	return milter.RespContinue, nil

@@ -12,51 +12,155 @@ import (
 	"github.com/d--j/go-milter/internal/header"
 	"github.com/d--j/go-milter/internal/wire"
 	"github.com/d--j/go-milter/mailfilter/addr"
+	"github.com/d--j/go-milter/milterutil"
 )
 
 type mockSession struct {
-	modifications              []*wire.Message
-	progressCalled             int
-	macros                     *milter.MacroBag
-	progressErr                error
-	WritePacket, WriteProgress func(msg *wire.Message) error
+	modifications  []*milter.ModifyAction
+	progressCalled int
+	macros         *milter.MacroBag
+	actErr         error
+	progressErr    error
+	mod            *mockModifier
 }
 
-func (s *mockSession) writePacket(msg *wire.Message) error {
-	s.modifications = append(s.modifications, msg)
-	return nil
+type mockModifier struct {
+	session *mockSession
 }
 
-func (s *mockSession) writeProgress(_ *wire.Message) error {
-	s.progressCalled++
-	return s.progressErr
+func (m *mockModifier) Get(name milter.MacroName) string {
+	return m.session.macros.Get(name)
 }
 
-func (s *mockSession) newModifier() *milter.Modifier {
-	if s.macros == nil {
-		m := milter.NewMacroBag()
-		m.Set(milter.MacroIfName, "ifname")
-		m.Set(milter.MacroIfAddr, "127.0.0.3")
-		m.Set(milter.MacroTlsVersion, "tls-version")
-		m.Set(milter.MacroCipher, "cipher")
-		m.Set(milter.MacroCipherBits, "cipher-bits")
-		m.Set(milter.MacroCertSubject, "cert-subject")
-		m.Set(milter.MacroCertIssuer, "cert-issuer")
-		m.Set(milter.MacroMailMailer, "mail-mailer")
-		m.Set(milter.MacroAuthAuthen, "auth-authen")
-		m.Set(milter.MacroAuthType, "auth-type")
-		m.Set(milter.MacroRcptMailer, "rcpt-mailer")
-		m.Set(milter.MacroQueueId, "Q123")
-		s.macros = m
-	}
-	if s.WritePacket == nil {
-		s.WritePacket = s.writePacket
-	}
-	if s.WriteProgress == nil {
-		s.WriteProgress = s.writeProgress
-	}
-	return milter.NewTestModifier(s.macros, s.WritePacket, s.WriteProgress, milter.AllClientSupportedActionMasks, milter.DataSize64K)
+func (m *mockModifier) GetEx(name milter.MacroName) (value string, ok bool) {
+	return m.session.macros.GetEx(name)
 }
+
+func (m *mockModifier) Version() uint32 {
+	return milter.MaxServerProtocolVersion
+}
+
+func (m *mockModifier) Protocol() milter.OptProtocol {
+	return 0
+}
+
+func (m *mockModifier) Actions() milter.OptAction {
+	return milter.AllClientSupportedActionMasks
+}
+
+func (m *mockModifier) MaxDataSize() milter.DataSize {
+	return milter.DataSize64K
+}
+
+func (m *mockModifier) MilterId() uint64 {
+	return 0
+}
+
+func (m *mockModifier) AddRecipient(r string, esmtpArgs string) error {
+	if m.session.actErr == nil {
+		m.session.modifications = append(m.session.modifications, &milter.ModifyAction{
+			Type:     milter.ActionAddRcpt,
+			Rcpt:     r,
+			RcptArgs: esmtpArgs,
+		})
+	}
+	return m.session.actErr
+}
+
+func (m *mockModifier) DeleteRecipient(r string) error {
+	if m.session.actErr == nil {
+		m.session.modifications = append(m.session.modifications, &milter.ModifyAction{
+			Type: milter.ActionDelRcpt,
+			Rcpt: r,
+		})
+	}
+	return m.session.actErr
+}
+
+func (m *mockModifier) ReplaceBodyRawChunk(chunk []byte) error {
+	if m.session.actErr == nil {
+		m.session.modifications = append(m.session.modifications, &milter.ModifyAction{
+			Type: milter.ActionReplaceBody,
+			Body: chunk,
+		})
+	}
+	return m.session.actErr
+}
+
+func (m *mockModifier) ReplaceBody(r io.Reader) error {
+	scanner := milterutil.GetFixedBufferScanner(uint32(m.MaxDataSize()), r)
+	defer scanner.Close()
+	for scanner.Scan() {
+		err := m.ReplaceBodyRawChunk(scanner.Bytes())
+		if err != nil {
+			return err
+		}
+	}
+	return scanner.Err()
+}
+
+func (m *mockModifier) Quarantine(reason string) error {
+	if m.session.actErr == nil {
+		m.session.modifications = append(m.session.modifications, &milter.ModifyAction{
+			Type:   milter.ActionQuarantine,
+			Reason: reason,
+		})
+	}
+	return m.session.actErr
+}
+
+func (m *mockModifier) AddHeader(name, value string) error {
+	if m.session.actErr == nil {
+		m.session.modifications = append(m.session.modifications, &milter.ModifyAction{
+			Type:        milter.ActionAddHeader,
+			HeaderName:  name,
+			HeaderValue: value,
+		})
+	}
+	return m.session.actErr
+}
+
+func (m *mockModifier) ChangeHeader(index int, name, value string) error {
+	if m.session.actErr == nil {
+		m.session.modifications = append(m.session.modifications, &milter.ModifyAction{
+			Type:        milter.ActionChangeHeader,
+			HeaderIndex: uint32(index),
+			HeaderName:  name,
+			HeaderValue: value,
+		})
+	}
+	return m.session.actErr
+}
+
+func (m *mockModifier) InsertHeader(index int, name, value string) error {
+	if m.session.actErr == nil {
+		m.session.modifications = append(m.session.modifications, &milter.ModifyAction{
+			Type:        milter.ActionInsertHeader,
+			HeaderIndex: uint32(index),
+			HeaderName:  name,
+			HeaderValue: value,
+		})
+	}
+	return m.session.actErr
+}
+
+func (m *mockModifier) ChangeFrom(value string, esmtpArgs string) error {
+	if m.session.actErr == nil {
+		m.session.modifications = append(m.session.modifications, &milter.ModifyAction{
+			Type:     milter.ActionChangeFrom,
+			From:     value,
+			FromArgs: esmtpArgs,
+		})
+	}
+	return m.session.actErr
+}
+
+func (m *mockModifier) Progress() error {
+	m.session.progressCalled++
+	return m.session.progressErr
+}
+
+var _ milter.Modifier = (*mockModifier)(nil)
 
 func newMockBackend() (*backend, *mockSession) {
 	body := bodyOption{
@@ -64,6 +168,21 @@ func newMockBackend() (*backend, *mockSession) {
 		MaxSize:   100 * 1024 * 1024,
 		MaxAction: TruncateWhenTooBig,
 	}
+	m := milter.NewMacroBag()
+	m.Set(milter.MacroIfName, "ifname")
+	m.Set(milter.MacroIfAddr, "127.0.0.3")
+	m.Set(milter.MacroTlsVersion, "tls-version")
+	m.Set(milter.MacroCipher, "cipher")
+	m.Set(milter.MacroCipherBits, "cipher-bits")
+	m.Set(milter.MacroCertSubject, "cert-subject")
+	m.Set(milter.MacroCertIssuer, "cert-issuer")
+	m.Set(milter.MacroMailMailer, "mail-mailer")
+	m.Set(milter.MacroAuthAuthen, "auth-authen")
+	m.Set(milter.MacroAuthType, "auth-type")
+	m.Set(milter.MacroRcptMailer, "rcpt-mailer")
+	m.Set(milter.MacroQueueId, "Q123")
+	session := &mockSession{macros: m}
+	session.mod = &mockModifier{session: session}
 	return &backend{
 		opts: options{
 			decisionAt:    DecisionAtEndOfMessage,
@@ -77,7 +196,7 @@ func newMockBackend() (*backend, *mockSession) {
 		leadingSpace: false,
 		decision:     nil,
 		transaction:  &transaction{bodyOpt: body},
-	}, &mockSession{}
+	}, session
 }
 
 func assertContinue(t *testing.T, resp *milter.Response, err error) {
@@ -95,7 +214,7 @@ func Test_backend_Abort(t *testing.T) {
 	b, s := newMockBackend()
 	trx := transaction{connect: Connect{Host: "host"}, helo: Helo{Name: "name"}}
 	b.transaction = &trx
-	if err := b.Abort(s.newModifier()); err != nil {
+	if err := b.Abort(s.mod); err != nil {
 		t.Errorf("expected nil, got %s", err)
 	}
 	if b.transaction == &trx {
@@ -105,7 +224,7 @@ func Test_backend_Abort(t *testing.T) {
 		t.Errorf("expected Connect and Helo to persist")
 	}
 	b.transaction = nil
-	if err := b.Abort(s.newModifier()); err != nil {
+	if err := b.Abort(s.mod); err != nil {
 		t.Errorf("expected nil, got %s", err)
 	}
 	if b.transaction == nil {
@@ -116,9 +235,9 @@ func Test_backend_Abort(t *testing.T) {
 func Test_backend_BodyChunk(t *testing.T) {
 	t.Parallel()
 	b, s := newMockBackend()
-	resp, err := b.BodyChunk([]byte("test"), s.newModifier())
+	resp, err := b.BodyChunk([]byte("test"), s.mod)
 	assertContinue(t, resp, err)
-	resp, err = b.BodyChunk([]byte("test"), s.newModifier())
+	resp, err = b.BodyChunk([]byte("test"), s.mod)
 	assertContinue(t, resp, err)
 	if b.transaction.body == nil {
 		t.Fatal("body file is nil")
@@ -137,9 +256,9 @@ func Test_backend_BodyChunkMaxReject(t *testing.T) {
 	b.opts.body.MaxSize = 6
 	b.opts.body.MaxAction = RejectMessageWhenTooBig
 	b.transaction.bodyOpt = *b.opts.body
-	resp, err := b.BodyChunk([]byte("test"), s.newModifier())
+	resp, err := b.BodyChunk([]byte("test"), s.mod)
 	assertContinue(t, resp, err)
-	resp, err = b.BodyChunk([]byte("test"), s.newModifier())
+	resp, err = b.BodyChunk([]byte("test"), s.mod)
 	if err != nil {
 		t.Fatalf("got err %s", err)
 	}
@@ -158,9 +277,9 @@ func Test_backend_BodyChunkMaxTruncate(t *testing.T) {
 	b.opts.body.MaxSize = 6
 	b.opts.body.MaxAction = TruncateWhenTooBig
 	b.transaction.bodyOpt = *b.opts.body
-	resp, err := b.BodyChunk([]byte("test"), s.newModifier())
+	resp, err := b.BodyChunk([]byte("test"), s.mod)
 	assertContinue(t, resp, err)
-	resp, err = b.BodyChunk([]byte("test"), s.newModifier())
+	resp, err = b.BodyChunk([]byte("test"), s.mod)
 	assertContinue(t, resp, err)
 	if b.transaction.body == nil {
 		t.Fatal("body file is nil")
@@ -179,9 +298,9 @@ func Test_backend_BodyChunkMaxClear(t *testing.T) {
 	b.opts.body.MaxSize = 6
 	b.opts.body.MaxAction = ClearWhenTooBig
 	b.transaction.bodyOpt = *b.opts.body
-	resp, err := b.BodyChunk([]byte("test"), s.newModifier())
+	resp, err := b.BodyChunk([]byte("test"), s.mod)
 	assertContinue(t, resp, err)
-	resp, err = b.BodyChunk([]byte("test"), s.newModifier())
+	resp, err = b.BodyChunk([]byte("test"), s.mod)
 	assertContinue(t, resp, err)
 	if b.transaction.body == nil {
 		t.Fatal("body file is nil")
@@ -196,10 +315,10 @@ func Test_backend_BodyChunkMaxClear(t *testing.T) {
 
 func Test_backend_Cleanup(t *testing.T) {
 	t.Parallel()
-	b, _ := newMockBackend()
+	b, s := newMockBackend()
 	trx := transaction{}
 	b.transaction = &trx
-	b.Cleanup()
+	b.Cleanup(s.mod)
 	if b.transaction == &trx {
 		t.Errorf("expected new transaction")
 	}
@@ -208,7 +327,7 @@ func Test_backend_Cleanup(t *testing.T) {
 func Test_backend_Connect(t *testing.T) {
 	t.Parallel()
 	b, s := newMockBackend()
-	resp, err := b.Connect("host", "family", 123, "127.0.0.2", s.newModifier())
+	resp, err := b.Connect("host", "family", 123, "127.0.0.2", s.mod)
 	assertContinue(t, resp, err)
 	expect := &Connect{
 		Host:   "host",
@@ -227,7 +346,7 @@ func Test_backend_Connect(t *testing.T) {
 func Test_backend_Data(t *testing.T) {
 	t.Parallel()
 	b, s := newMockBackend()
-	resp, err := b.Data(s.newModifier())
+	resp, err := b.Data(s.mod)
 	assertContinue(t, resp, err)
 	expect := "Q123"
 	got := b.transaction.QueueId()
@@ -246,11 +365,11 @@ func Test_backend_EndOfMessage(t *testing.T) {
 		}
 		return nil, expectedErr
 	}
-	resp, err := b.EndOfMessage(s.newModifier())
-	if resp != nil || err != expectedErr {
+	resp, err := b.EndOfMessage(s.mod)
+	if resp != nil || !errors.Is(err, expectedErr) {
 		t.Fatalf("wrong return %v, %v", resp, err)
 	}
-	b.Cleanup()
+	b.Cleanup(s.mod)
 	b.transaction.addHeader("subject", []byte("subject: test"))
 	b.decision = func(_ context.Context, trx Trx) (Decision, error) {
 		if subj := trx.Headers().Value("Subject"); subj != " test" {
@@ -258,47 +377,47 @@ func Test_backend_EndOfMessage(t *testing.T) {
 		}
 		return nil, expectedErr
 	}
-	resp, err = b.EndOfMessage(s.newModifier())
-	if resp != nil || err != expectedErr {
+	resp, err = b.EndOfMessage(s.mod)
+	if resp != nil || !errors.Is(err, expectedErr) {
 		t.Fatalf("wrong return %v, %v", resp, err)
 	}
-	b.Cleanup()
+	b.Cleanup(s.mod)
 	b.decision = func(_ context.Context, _ Trx) (Decision, error) {
 		return TempFail, nil
 	}
-	resp, err = b.EndOfMessage(s.newModifier())
+	resp, err = b.EndOfMessage(s.mod)
 	if resp != milter.RespTempFail || err != nil {
 		t.Fatalf("wrong return %v, %v", resp, err)
 	}
-	b.Cleanup()
+	b.Cleanup(s.mod)
 	b.decision = func(_ context.Context, _ Trx) (Decision, error) {
 		return Reject, nil
 	}
-	resp, err = b.EndOfMessage(s.newModifier())
+	resp, err = b.EndOfMessage(s.mod)
 	if resp != milter.RespReject || err != nil {
 		t.Fatalf("wrong return %v, %v", resp, err)
 	}
-	b.Cleanup()
+	b.Cleanup(s.mod)
 	b.decision = func(_ context.Context, _ Trx) (Decision, error) {
 		return Discard, nil
 	}
-	resp, err = b.EndOfMessage(s.newModifier())
+	resp, err = b.EndOfMessage(s.mod)
 	if resp != milter.RespDiscard || err != nil {
 		t.Fatalf("wrong return %v, %v", resp, err)
 	}
-	b.Cleanup()
+	b.Cleanup(s.mod)
 	b.decision = func(_ context.Context, _ Trx) (Decision, error) {
 		return CustomErrorResponse(400, "not right now"), nil
 	}
-	resp, err = b.EndOfMessage(s.newModifier())
+	resp, err = b.EndOfMessage(s.mod)
 	if resp == nil || resp.Response().Code != wire.Code(wire.ActReplyCode) || err != nil {
 		t.Fatalf("wrong return %v, %v", resp, err)
 	}
-	b.Cleanup()
+	b.Cleanup(s.mod)
 	b.decision = func(_ context.Context, _ Trx) (Decision, error) {
 		return CustomErrorResponse(200, "not right now"), nil
 	}
-	resp, err = b.EndOfMessage(s.newModifier())
+	resp, err = b.EndOfMessage(s.mod)
 	if resp != milter.RespTempFail || err != nil {
 		t.Fatalf("wrong return %v, %v", resp, err)
 	}
@@ -312,17 +431,17 @@ func outputFields(hdr *header.Header) string {
 func Test_backend_Header(t *testing.T) {
 	t.Parallel()
 	b, s := newMockBackend()
-	resp, err := b.Header("from", "root", s.newModifier())
+	resp, err := b.Header("from", "root", s.mod)
 	assertContinue(t, resp, err)
 	b.leadingSpace = true
-	resp, err = b.Header("To", " root, 1", s.newModifier())
+	resp, err = b.Header("To", " root, 1", s.mod)
 	assertContinue(t, resp, err)
-	resp, err = b.Header("To", "root, 2", s.newModifier())
+	resp, err = b.Header("To", "root, 2", s.mod)
 	assertContinue(t, resp, err)
 	b.leadingSpace = false
-	resp, err = b.Header("To", "\troot, 3", s.newModifier())
+	resp, err = b.Header("To", "\troot, 3", s.mod)
 	assertContinue(t, resp, err)
-	resp, err = b.Header("To", "root, 4", s.newModifier())
+	resp, err = b.Header("To", "root, 4", s.mod)
 	assertContinue(t, resp, err)
 	expect, err := header.New([]byte("from: root\r\nTo: root, 1\r\nTo:root, 2\r\nTo:\troot, 3\r\nTo: root, 4\n\r\n"))
 	if err != nil {
@@ -339,12 +458,12 @@ func Test_backend_HeaderMaxReject(t *testing.T) {
 	b, s := newMockBackend()
 	b.opts.header.Max = 2
 	b.opts.header.MaxAction = RejectMessageWhenTooBig
-	resp, err := b.Header("from", "root", s.newModifier())
+	resp, err := b.Header("from", "root", s.mod)
 	assertContinue(t, resp, err)
 	b.leadingSpace = true
-	resp, err = b.Header("To", " root, 1", s.newModifier())
+	resp, err = b.Header("To", " root, 1", s.mod)
 	assertContinue(t, resp, err)
-	resp, err = b.Header("To", "root, 2", s.newModifier())
+	resp, err = b.Header("To", "root, 2", s.mod)
 	if err != nil {
 		t.Fatalf("got err %s", err)
 	}
@@ -362,15 +481,15 @@ func Test_backend_HeaderMaxTruncate(t *testing.T) {
 	b, s := newMockBackend()
 	b.opts.header.Max = 2
 	b.opts.header.MaxAction = TruncateWhenTooBig
-	resp, err := b.Header("from", "root", s.newModifier())
+	resp, err := b.Header("from", "root", s.mod)
 	assertContinue(t, resp, err)
-	resp, err = b.Header("To", "root, 1", s.newModifier())
+	resp, err = b.Header("To", "root, 1", s.mod)
 	assertContinue(t, resp, err)
-	resp, err = b.Header("To", "root, 2", s.newModifier())
+	resp, err = b.Header("To", "root, 2", s.mod)
 	assertContinue(t, resp, err)
-	resp, err = b.Header("To", "root, 3", s.newModifier())
+	resp, err = b.Header("To", "root, 3", s.mod)
 	assertContinue(t, resp, err)
-	resp, err = b.Header("To", "root, 4", s.newModifier())
+	resp, err = b.Header("To", "root, 4", s.mod)
 	assertContinue(t, resp, err)
 	expect, err := header.New([]byte("from: root\r\nTo: root, 1\r\n\r\n"))
 	if err != nil {
@@ -387,15 +506,15 @@ func Test_backend_HeaderMaxClear(t *testing.T) {
 	b, s := newMockBackend()
 	b.opts.header.Max = 2
 	b.opts.header.MaxAction = ClearWhenTooBig
-	resp, err := b.Header("from", "root", s.newModifier())
+	resp, err := b.Header("from", "root", s.mod)
 	assertContinue(t, resp, err)
-	resp, err = b.Header("To", "root, 1", s.newModifier())
+	resp, err = b.Header("To", "root, 1", s.mod)
 	assertContinue(t, resp, err)
-	resp, err = b.Header("To", "root, 2", s.newModifier())
+	resp, err = b.Header("To", "root, 2", s.mod)
 	assertContinue(t, resp, err)
-	resp, err = b.Header("To", "root, 3", s.newModifier())
+	resp, err = b.Header("To", "root, 3", s.mod)
 	assertContinue(t, resp, err)
-	resp, err = b.Header("To", "root, 4", s.newModifier())
+	resp, err = b.Header("To", "root, 4", s.mod)
 	assertContinue(t, resp, err)
 	expect, err := header.New([]byte("\r\n"))
 	if err != nil {
@@ -412,7 +531,7 @@ func Test_backend_Headers(t *testing.T) {
 func Test_backend_Helo(t *testing.T) {
 	t.Parallel()
 	b, s := newMockBackend()
-	resp, err := b.Helo("helohost", s.newModifier())
+	resp, err := b.Helo("helohost", s.mod)
 	assertContinue(t, resp, err)
 	expect := &Helo{
 		Name:        "helohost",
@@ -431,7 +550,7 @@ func Test_backend_Helo(t *testing.T) {
 func Test_backend_MailFrom(t *testing.T) {
 	t.Parallel()
 	b, s := newMockBackend()
-	resp, err := b.MailFrom("root@localhost", "A=B", s.newModifier())
+	resp, err := b.MailFrom("root@localhost", "A=B", s.mod)
 	assertContinue(t, resp, err)
 	expect := addr.NewMailFrom("root@localhost", "A=B", "mail-mailer", "auth-authen", "auth-type")
 	got := b.transaction.origMailFrom
@@ -443,10 +562,10 @@ func Test_backend_MailFrom(t *testing.T) {
 func Test_backend_RcptTo(t *testing.T) {
 	t.Parallel()
 	b, s := newMockBackend()
-	resp, err := b.RcptTo("root@localhost", "A=B", s.newModifier())
+	resp, err := b.RcptTo("root@localhost", "A=B", s.mod)
 	assertContinue(t, resp, err)
 	s.macros.Set(milter.MacroRcptMailer, "2")
-	resp, err = b.RcptTo("nobody@localhost", "", s.newModifier())
+	resp, err = b.RcptTo("nobody@localhost", "", s.mod)
 	assertContinue(t, resp, err)
 	expect := []*addr.RcptTo{
 		addr.NewRcptTo("root@localhost", "A=B", "rcpt-mailer"),
@@ -469,10 +588,10 @@ func Test_backend_RcptToReject(t *testing.T) {
 		time.Sleep(time.Second * 2)
 		return Reject, nil
 	}
-	resp, err := b.RcptTo("root@localhost", "A=B", s.newModifier())
+	resp, err := b.RcptTo("root@localhost", "A=B", s.mod)
 	assertContinue(t, resp, err)
 	s.macros.Set(milter.MacroRcptMailer, "2")
-	resp, err = b.RcptTo("nobody@localhost", "", s.newModifier())
+	resp, err = b.RcptTo("nobody@localhost", "", s.mod)
 	if err != nil {
 		t.Fatalf("got err %s", err)
 	}
@@ -504,10 +623,10 @@ func Test_backend_RcptToDiscard(t *testing.T) {
 		time.Sleep(time.Second * 2)
 		return Discard, nil
 	}
-	resp, err := b.RcptTo("root@localhost", "A=B", s.newModifier())
+	resp, err := b.RcptTo("root@localhost", "A=B", s.mod)
 	assertContinue(t, resp, err)
 	s.macros.Set(milter.MacroRcptMailer, "2")
-	resp, err = b.RcptTo("nobody@localhost", "", s.newModifier())
+	resp, err = b.RcptTo("nobody@localhost", "", s.mod)
 	if err != nil {
 		t.Fatalf("got err %s", err)
 	}
@@ -535,10 +654,10 @@ func Test_backend_RcptToValidationError(t *testing.T) {
 		}
 		return nil, errors.New("error")
 	}
-	resp, err := b.RcptTo("root@localhost", "A=B", s.newModifier())
+	resp, err := b.RcptTo("root@localhost", "A=B", s.mod)
 	assertContinue(t, resp, err)
 	s.macros.Set(milter.MacroRcptMailer, "2")
-	resp, err = b.RcptTo("nobody@localhost", "", s.newModifier())
+	resp, err = b.RcptTo("nobody@localhost", "", s.mod)
 	if err == nil {
 		t.Fatalf("got err nil, expected error")
 	}
@@ -559,10 +678,10 @@ func Test_backend_RcptToProgressError(t *testing.T) {
 		}
 	}
 	s.progressErr = errors.New("error")
-	resp, err := b.RcptTo("root@localhost", "A=B", s.newModifier())
+	resp, err := b.RcptTo("root@localhost", "A=B", s.mod)
 	assertContinue(t, resp, err)
 	s.macros.Set(milter.MacroRcptMailer, "2")
-	resp, err = b.RcptTo("nobody@localhost", "", s.newModifier())
+	resp, err = b.RcptTo("nobody@localhost", "", s.mod)
 	if err == nil {
 		t.Fatalf("got err nil, expected context done")
 	}
@@ -574,24 +693,24 @@ func Test_backend_RcptToProgressError(t *testing.T) {
 func Test_backend_decideOrContinue(t *testing.T) {
 	t.Parallel()
 	b, s := newMockBackend()
-	resp, err := b.decideOrContinue(DecisionAtHelo, s.newModifier())
+	resp, err := b.decideOrContinue(DecisionAtHelo, s.mod)
 	assertContinue(t, resp, err)
 	b.opts.decisionAt = DecisionAtHelo
 	b.decision = func(_ context.Context, _ Trx) (Decision, error) {
 		return Accept, nil
 	}
-	resp, err = b.decideOrContinue(DecisionAtHelo, s.newModifier())
+	resp, err = b.decideOrContinue(DecisionAtHelo, s.mod)
 	if err != nil {
 		t.Fatalf("got err %s", err)
 	}
 	if resp != milter.RespAccept {
 		t.Fatalf("got resp %v expected accept", resp)
 	}
-	b.Cleanup()
+	b.Cleanup(s.mod)
 	b.decision = func(_ context.Context, _ Trx) (Decision, error) {
 		return nil, io.EOF
 	}
-	_, err = b.decideOrContinue(DecisionAtHelo, s.newModifier())
+	_, err = b.decideOrContinue(DecisionAtHelo, s.mod)
 	if err != io.EOF {
 		t.Fatalf("got err %v, want io.EOF", err)
 	}
@@ -617,7 +736,7 @@ func Test_backend_error(t *testing.T) {
 	}
 	b.opts.errorHandling = AcceptWhenError
 	resp, err = b.error(expected)
-	if err != expected || resp != milter.RespAccept {
+	if !errors.Is(err, expected) || resp != milter.RespAccept {
 		t.Fatalf("error() wrong return values %v, %v", resp, err)
 	}
 	if warningCalled != 1 {
@@ -625,7 +744,7 @@ func Test_backend_error(t *testing.T) {
 	}
 	b.opts.errorHandling = TempFailWhenError
 	resp, err = b.error(expected)
-	if err != expected || resp != milter.RespTempFail {
+	if !errors.Is(err, expected) || resp != milter.RespTempFail {
 		t.Fatalf("error() wrong return values %v, %v", resp, err)
 	}
 	if warningCalled != 2 {
@@ -633,7 +752,7 @@ func Test_backend_error(t *testing.T) {
 	}
 	b.opts.errorHandling = RejectWhenError
 	resp, err = b.error(expected)
-	if err != expected || resp != milter.RespReject {
+	if !errors.Is(err, expected) || resp != milter.RespReject {
 		t.Fatalf("error() wrong return values %v, %v", resp, err)
 	}
 	if warningCalled != 3 {
@@ -648,36 +767,52 @@ func Test_backend_error(t *testing.T) {
 
 func Test_backend_makeDecision(t *testing.T) {
 	t.Parallel()
-	b, s := newMockBackend()
-	b.decision = func(_ context.Context, _ Trx) (Decision, error) {
-		return Accept, nil
-	}
-	b.makeDecision(s.newModifier())
-	if b.transaction.decision != Accept || b.transaction.decisionErr != nil {
-		t.Fatal("values not set")
-	}
-	if s.progressCalled > 0 {
-		t.Fatal("progress called")
-	}
-	b.Cleanup()
-	b.decision = func(_ context.Context, _ Trx) (Decision, error) {
-		time.Sleep(time.Second + 30*time.Millisecond)
-		return Accept, nil
-	}
-	b.makeDecision(s.newModifier())
-	if b.transaction.decision != Accept || b.transaction.decisionErr != nil {
-		t.Fatal("values not set")
-	}
-	if s.progressCalled != 1 {
-		t.Fatal("progress not called")
-	}
-	b.Cleanup()
-	expect := errors.New("error")
-	s.WriteProgress = func(_ *wire.Message) error {
-		return expect
-	}
-	b.makeDecision(s.newModifier())
-	if b.transaction.decision != Accept || b.transaction.decisionErr != expect {
-		t.Fatal("values not set")
-	}
+	t.Run("1", func(t *testing.T) {
+		t.Parallel()
+		b, s := newMockBackend()
+		b.decision = func(_ context.Context, _ Trx) (Decision, error) {
+			return Accept, nil
+		}
+		b.makeDecision(s.mod)
+		if !b.transaction.hasDecision || b.transaction.decision != Accept || b.transaction.decisionErr != nil {
+			t.Fatal("values not set")
+		}
+		if s.progressCalled > 0 {
+			t.Fatal("progress called")
+		}
+		b.Cleanup(s.mod)
+	})
+	t.Run("2", func(t *testing.T) {
+		t.Parallel()
+		b, s := newMockBackend()
+		b.decision = func(_ context.Context, _ Trx) (Decision, error) {
+			time.Sleep(time.Second + 30*time.Millisecond)
+			return Accept, nil
+		}
+		b.makeDecision(s.mod)
+		if !b.transaction.hasDecision || b.transaction.decision != Accept || b.transaction.decisionErr != nil {
+			t.Fatal("values not set")
+		}
+		if s.progressCalled != 1 {
+			t.Fatal("progress not called")
+		}
+		b.Cleanup(s.mod)
+	})
+	t.Run("3", func(t *testing.T) {
+		t.Parallel()
+		b, s := newMockBackend()
+		b.decision = func(_ context.Context, _ Trx) (Decision, error) {
+			time.Sleep(time.Second + 30*time.Millisecond)
+			return Accept, nil
+		}
+		expect := errors.New("error")
+		s.progressErr = expect
+		b.makeDecision(s.mod)
+		if !b.transaction.hasDecision || b.transaction.decision != Accept {
+			t.Fatalf("decision expected accept, got %s", b.transaction.decision)
+		}
+		if !errors.Is(expect, b.transaction.decisionErr) {
+			t.Fatal("err not set")
+		}
+	})
 }

@@ -3,6 +3,7 @@ package mailfilter
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -200,8 +201,8 @@ func New(network, address string, decision DecisionModificationFunc, opts ...Opt
 	// start the milter
 	f.wgDone.Add(1)
 	go func(socket net.Listener) {
-		if err := server.Serve(socket); err != nil {
-			milter.LogWarning("server.Server() error: %s", err)
+		if err := server.Serve(socket); err != nil && !errors.Is(err, milter.ErrServerClosed) {
+			milter.LogWarning("server.Serve() error: %s", err)
 		}
 		f.wgDone.Done()
 	}(socket)
@@ -216,6 +217,13 @@ func (f *MailFilter) Addr() net.Addr {
 		return nil
 	}
 	return f.socket.Addr()
+}
+
+// MilterCount returns the number of milter backends that this MailFilter created in total.
+// A Milter instance gets created for each new connection from the MTA (after successful negotiation).
+// Use this function for logging purposes.
+func (f *MailFilter) MilterCount() uint64 {
+	return f.server.MilterCount()
 }
 
 // Wait waits for the end of the [MailFilter] server.

@@ -5,7 +5,6 @@ import (
 	"context"
 	"flag"
 	"log"
-	"math/rand"
 	"net"
 	"os"
 	"os/signal"
@@ -15,17 +14,6 @@ import (
 
 	"github.com/d--j/go-milter"
 )
-
-//goland:noinspection SpellCheckingInspection
-var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
-
-func randSeq(n int) string {
-	b := make([]rune, n)
-	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
-	}
-	return string(b)
-}
 
 func main() {
 	transport := flag.String("transport", "tcp", "Transport to use for milter connection, One of 'tcp', 'unix', 'tcp4' or 'tcp6'")
@@ -60,7 +48,7 @@ func main() {
 
 	server := milter.NewServer(
 		milter.WithMilter(func() milter.Milter {
-			return &LogMilter{logPrefix: randSeq(10)}
+			return &LogMilter{}
 		}),
 		milter.WithNegotiationCallback(func(mtaVersion, milterVersion uint32, mtaActions, milterActions milter.OptAction, mtaProtocol, milterProtocol milter.OptProtocol, offeredDataSize milter.DataSize) (version uint32, actions milter.OptAction, protocol milter.OptProtocol, maxDataSize milter.DataSize, err error) {
 			log.Printf("ACCEPT milter version %d, actions %q, protocol %q, data size %d", mtaVersion, mtaActions, mtaProtocol, offeredDataSize)
@@ -95,4 +83,6 @@ func main() {
 
 	// quit when milter quits
 	wgDone.Wait()
+
+	log.Printf("Milter created %d backends", server.MilterCount())
 }

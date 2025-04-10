@@ -199,3 +199,29 @@ func TestAppendUint16(t *testing.T) {
 		})
 	}
 }
+
+func TestMessage_MacroCode(t *testing.T) {
+	type fields struct {
+		Code Code
+		Data []byte
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   Code
+	}{
+		{"macro", fields{Code: CodeMacro, Data: []byte{byte(CodeRcpt)}}, CodeRcpt},
+		{"non-macro", fields{Code: CodeRcpt, Data: []byte{}}, CodeRcpt},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &Message{
+				Code: tt.fields.Code,
+				Data: tt.fields.Data,
+			}
+			if got := m.MacroCode(); got != tt.want {
+				t.Errorf("MacroCode() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

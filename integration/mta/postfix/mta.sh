@@ -10,7 +10,7 @@ if [ "tags" = "$1" ]; then
     die "no postfix executable found"
   fi
   echo "exec-foreground"
-  echo "mta-mock"
+  echo "mta-postfix"
   echo "auth-no"
   if [ -z "$SKIP_POSTFIX_AUTH" ]; then
     echo "auth-plain"

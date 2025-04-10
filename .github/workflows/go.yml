@@ -35,7 +35,7 @@ jobs:
         uses: shogo82148/actions-goveralls@v1
         with:
           path-to-profile: profile.cov
-          ignore: "cmd/log-milter/main.go,cmd/log-milter/milter.go,cmd/milter-check/main.go"
+          ignore: "cmd/log-milter/main.go,cmd/log-milter/milter.go,cmd/milter-check/main.go,internal/wire/wire_string.go"
 
       - name: Install Postfix
         run: sudo -n -- apt-get update -q && sudo -n -- apt-get install -y postfix sasl2-bin libsasl2-2 libsasl2-modules ssl-cert cpio courier-authlib

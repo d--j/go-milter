@@ -94,7 +94,9 @@ func WithDialer(dialer Dialer) Option {
 }
 
 // WithReadTimeout sets the read-timeout for all read operations of this [Client] or [Server].
-// The default is a read-timeout of 10 seconds.
+// For Client the default is a read-timeout of 10 seconds.
+// For Server the default is a read-timeout of 0 seconds (no timeout). This is because the MTA sends milter messages
+// when the SMTP client sends data. To not artificially break the MTA/SMTP client connection, we do not set a read timeout.
 func WithReadTimeout(timeout time.Duration) Option {
 	return func(h *options) {
 		h.readTimeout = timeout
