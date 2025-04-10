@@ -3,12 +3,89 @@ package milter
 import (
 	"bytes"
 	"context"
+	"io"
+	"net"
 	"testing"
 	"time"
 
 	"github.com/d--j/go-milter/internal/wire"
 	"github.com/emersion/go-message/textproto"
 )
+
+type mockModifier struct {
+	version  uint32
+	protocol OptProtocol
+}
+
+func (m *mockModifier) Get(name MacroName) string {
+	return ""
+}
+
+func (m *mockModifier) GetEx(name MacroName) (value string, ok bool) {
+	return "", false
+}
+
+func (m *mockModifier) Version() uint32 {
+	return m.version
+}
+
+func (m *mockModifier) Protocol() OptProtocol {
+	return m.protocol
+}
+
+func (m *mockModifier) Actions() OptAction {
+	return AllClientSupportedActionMasks
+}
+
+func (m *mockModifier) MaxDataSize() DataSize {
+	return DataSize64K
+}
+
+func (m *mockModifier) MilterId() uint64 {
+	return 0
+}
+
+func (m *mockModifier) AddRecipient(r string, esmtpArgs string) error {
+	panic("not implemented")
+}
+
+func (m *mockModifier) DeleteRecipient(r string) error {
+	panic("not implemented")
+}
+
+func (m *mockModifier) ReplaceBodyRawChunk(chunk []byte) error {
+	panic("not implemented")
+}
+
+func (m *mockModifier) ReplaceBody(r io.Reader) error {
+	panic("not implemented")
+}
+
+func (m *mockModifier) Quarantine(reason string) error {
+	panic("not implemented")
+}
+
+func (m *mockModifier) AddHeader(name, value string) error {
+	panic("not implemented")
+}
+
+func (m *mockModifier) ChangeHeader(index int, name, value string) error {
+	panic("not implemented")
+}
+
+func (m *mockModifier) InsertHeader(index int, name, value string) error {
+	panic("not implemented")
+}
+
+func (m *mockModifier) ChangeFrom(value string, esmtpArgs string) error {
+	panic("not implemented")
+}
+
+func (m *mockModifier) Progress() error {
+	panic("not implemented")
+}
+
+var _ Modifier = (*mockModifier)(nil)
 
 func TestNoOpMilter(t *testing.T) {
 	t.Parallel()
@@ -30,19 +107,56 @@ func TestNoOpMilter(t *testing.T) {
 		asset(resp, err, wire.ActAccept)
 	}
 	m := NoOpMilter{}
-	assetContinue(m.Connect("", "", 0, "", nil))
-	assetContinue(m.Helo("", nil))
-	assetContinue(m.MailFrom("", "", nil))
-	assetContinue(m.RcptTo("", "", nil))
-	assetContinue(m.Data(nil))
-	assetContinue(m.Header("", "", nil))
-	assetContinue(m.Headers(nil))
-	assetContinue(m.BodyChunk(nil, nil))
-	assetAccept(m.EndOfMessage(nil))
-	assetContinue(m.Unknown("", nil))
-	if err := m.Abort(nil); err != nil {
-		t.Fatal(err)
+	mod := &mockModifier{version: 2, protocol: 0}
+	assetContinue(m.Connect("", "", 0, "", mod))
+	assetContinue(m.Helo("", mod))
+	assetContinue(m.MailFrom("", "", mod))
+	assetContinue(m.RcptTo("", "", mod))
+	assetContinue(m.Unknown("", mod))
+	assetContinue(m.Data(mod))
+	assetContinue(m.Header("", "", mod))
+	assetContinue(m.Headers(mod))
+	assetContinue(m.BodyChunk(nil, mod))
+	assetAccept(m.EndOfMessage(mod))
+	m.Cleanup(mod)
+}
+
+func TestNoOpMilterV6(t *testing.T) {
+	t.Parallel()
+	asset := func(resp *Response, err error, act wire.ActionCode) {
+		t.Helper()
+		if resp.Response().Code != wire.Code(act) {
+			t.Fatalf("NoOpMilter response is not %c: %+v", act, resp)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
+	assetContinue := func(resp *Response, err error) {
+		t.Helper()
+		asset(resp, err, wire.ActContinue)
+	}
+	assetSkip := func(resp *Response, err error) {
+		t.Helper()
+		asset(resp, err, wire.ActSkip)
+	}
+	assetAccept := func(resp *Response, err error) {
+		t.Helper()
+		asset(resp, err, wire.ActAccept)
+	}
+	m := NoOpMilter{}
+	mod := &mockModifier{version: 6, protocol: OptSkip}
+	assetContinue(m.Connect("", "", 0, "", mod))
+	assetContinue(m.Helo("", mod))
+	assetContinue(m.MailFrom("", "", mod))
+	assetSkip(m.RcptTo("", "", mod))
+	assetContinue(m.Unknown("", mod))
+	assetContinue(m.Data(mod))
+	assetSkip(m.Header("", "", mod))
+	assetContinue(m.Headers(mod))
+	assetSkip(m.BodyChunk(nil, mod))
+	assetAccept(m.EndOfMessage(mod))
+	m.Cleanup(mod)
 }
 
 func TestServer_NoOpMilter(t *testing.T) {
@@ -85,6 +199,9 @@ func TestServer_NoOpMilter(t *testing.T) {
 	assertContinue(w.session.Mail("", ""))
 	assertContinue(w.session.Rcpt("", ""))
 	assertContinue(w.session.Rcpt("", ""))
+	if err := w.session.Abort(nil); err != nil {
+		t.Fatal(err)
+	}
 	if err := w.session.Abort(nil); err != nil {
 		t.Fatal(err)
 	}
@@ -169,6 +286,9 @@ func TestServer_Shutdown(t *testing.T) {
 				if _, _, err := w.session.End(); err != nil {
 					return
 				}
+				if err := w.session.Close(); err != nil {
+					return
+				}
 			}()
 		}, oneSecCtx}, false},
 	}
@@ -186,5 +306,45 @@ func TestServer_Shutdown(t *testing.T) {
 				t.Errorf("Shutdown() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+type dummyDialer struct {
+}
+
+func (d *dummyDialer) Dial(network, address string) (net.Conn, error) {
+	return nil, nil
+}
+
+func TestNewServerPanic(t *testing.T) {
+	type args struct {
+		opts []Option
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{"missing milter function", args{opts: []Option{WithDynamicMilter(nil)}}},
+		{"wrong version", args{opts: []Option{WithMilter(nil), WithMaximumVersion(99)}}},
+		{"with dialer", args{opts: []Option{WithMilter(nil), WithDialer(&dummyDialer{})}}},
+		{"with offered max data", args{opts: []Option{WithMilter(nil), WithOfferedMaxData(DataSize1M)}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Errorf("NewServer() did not panic")
+				}
+			}()
+			NewServer(tt.args.opts...)
+		})
+	}
+}
+
+func TestServer_MilterCount(t *testing.T) {
+	s := &Server{}
+	s.milterCount.Store(1)
+	if got := s.MilterCount(); got != 1 {
+		t.Errorf("MilterCount() = %d, want %d", got, 1)
 	}
 }

@@ -6,6 +6,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/d--j/go-milter"
+	"github.com/d--j/go-milter/milterutil"
+	"github.com/emersion/go-sasl"
+	"github.com/emersion/go-smtp"
 	"io"
 	"log"
 	"math/rand"
@@ -14,10 +18,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/d--j/go-milter"
-	"github.com/emersion/go-sasl"
-	"github.com/emersion/go-smtp"
 )
 
 type Rcpt struct {
@@ -124,6 +124,7 @@ type Session struct {
 	macros                 *milter.MacroBag
 	filter                 *milter.ClientSession
 	discarded              bool
+	accepted               bool
 	queueId                string
 	MailFrom, MailFromArgs string
 	Recipients             []Rcpt
@@ -157,13 +158,18 @@ func (s *Session) Auth(_ string) (sasl.Server, error) {
 
 func (s *Session) handleMilter(resp *milter.Action, err error) error {
 	if err != nil {
+		log.Printf("[%s] Milter err response: %s", s.queueId, err.Error())
 		return err
 	}
+	log.Printf("[%s] Milter response: %s", s.queueId, resp)
 	if resp.StopProcessing() {
 		return errorFromResp(resp)
 	}
 	if resp.Type == milter.ActionDiscard {
 		s.discarded = true
+	}
+	if resp.Type == milter.ActionAccept {
+		s.accepted = true
 	}
 	return nil
 }
@@ -252,8 +258,14 @@ func toRcptOptions(arg string) *smtp.RcptOptions {
 
 func (s *Session) Mail(from string, opts *smtp.MailOptions) error {
 	log.Printf("[%s] Mail from: %s", s.queueId, from)
+	if s.discarded {
+		return nil
+	}
 	s.MailFrom = from
 	s.MailFromArgs = parseMailOptions(opts)
+	if s.accepted {
+		return nil
+	}
 	return s.handleMilter(s.filter.Mail(s.MailFrom, s.MailFromArgs))
 }
 
@@ -262,36 +274,43 @@ func (s *Session) Rcpt(to string, _ *smtp.RcptOptions) error {
 	if s.discarded {
 		return nil
 	}
-	milterResp, err := s.filter.Rcpt(to, "")
-	if err != nil {
-		return err
-	}
-	if milterResp.Type == milter.ActionDiscard {
-		s.discarded = true
-	}
-	if milterResp.StopProcessing() {
-		return errorFromResp(milterResp)
+	if !s.accepted {
+		resp, err := s.filter.Rcpt(to, "")
+		if err != nil {
+			return err
+		}
+		if resp.Type == milter.ActionDiscard {
+			s.discarded = true
+		}
+		log.Printf("[%s] Milter response: %s", s.queueId, resp)
+		if resp.StopProcessing() {
+			return errorFromResp(resp)
+		}
+	} else {
+		log.Printf("[%s] skip milter", s.queueId)
 	}
 	s.Recipients = append(s.Recipients, Rcpt{Addr: to})
 	return nil
 }
 
 func (s *Session) Data(r io.Reader) error {
-	needsDiscard := true
 	defer func() {
-		if needsDiscard {
-			_, _ = io.Copy(io.Discard, r)
-		}
+		_, _ = io.Copy(io.Discard, r)
 	}()
+	log.Printf("[%s] Data", s.queueId)
 	if s.discarded {
 		return nil
 	}
-	err := s.handleMilter(s.filter.DataStart())
-	if err != nil {
-		return err
-	}
-	if s.discarded {
-		return nil
+	if !s.accepted {
+		err := s.handleMilter(s.filter.DataStart())
+		if err != nil {
+			return err
+		}
+		if s.discarded {
+			return nil
+		}
+	} else {
+		log.Printf("[%s] skip milter", s.queueId)
 	}
 	receivedHeader := strings.NewReader("Received: from mock ([127.0.0.1]) by mock with ESMTP for <someone@example.com>; Fri, 03 Mar 2023 22:11:17 +0100\r\n")
 	data, err := io.ReadAll(io.MultiReader(receivedHeader, r))
@@ -309,118 +328,160 @@ func (s *Session) Data(r io.Reader) error {
 	}
 	log.Printf("[%s] Data Lengths: Header: %d Body: %d", s.queueId, len(s.Header), len(s.Body))
 	headers := splitHeaders(s.Header)
+
 	for _, hdr := range headers {
-		err = s.handleMilter(s.filter.HeaderField(hdr.key, string(hdr.raw[len(hdr.key)+1:]), nil))
+		log.Printf("[%s] Header %q", s.queueId, hdr.raw)
+		if !s.accepted {
+			err = s.handleMilter(s.filter.HeaderField(hdr.key, string(hdr.raw[len(hdr.key)+1:]), nil))
+			if err != nil {
+				return err
+			}
+			if s.discarded {
+				return nil
+			}
+		} else {
+			log.Printf("[%s] skip milter", s.queueId)
+		}
+	}
+	log.Printf("[%s] HeaderEnd", s.queueId)
+	if !s.accepted {
+		err = s.handleMilter(s.filter.HeaderEnd())
 		if err != nil {
 			return err
 		}
 		if s.discarded {
 			return nil
 		}
+	} else {
+		log.Printf("[%s] skip milter", s.queueId)
 	}
-	err = s.handleMilter(s.filter.HeaderEnd())
-	if err != nil {
-		return err
-	}
-	if s.discarded {
-		return nil
+	// two distinct if statements because HeaderEnd could set s.accepted
+	if !s.accepted {
+		scanner := milterutil.GetFixedBufferScanner(uint32(milter.DataSize64K), bytes.NewReader(s.Body))
+		defer scanner.Close()
+		i := 0
+		for scanner.Scan() {
+			i += 1
+			log.Printf("[%s] BodyChunk #%d", s.queueId, i)
+			err = s.handleMilter(s.filter.BodyChunk(scanner.Bytes()))
+			if err != nil {
+				return err
+			}
+			if s.accepted {
+				break
+			}
+			if s.discarded {
+				return nil
+			}
+		}
+		if scanner.Err() != nil {
+			return scanner.Err()
+		}
+	} else {
+		log.Printf("[%s] skip milter BodyChunks", s.queueId)
 	}
 
-	needsDiscard = false
-	modActions, resp, err := s.filter.BodyReadFrom(bytes.NewReader(s.Body))
-	err = s.handleMilter(resp, err)
-	if err != nil {
-		return err
-	}
-	if s.discarded {
-		return nil
-	}
-	replacedBody := []byte(nil)
+	if !s.accepted {
+		log.Printf("[%s] End", s.queueId)
+		modActions, resp, err := s.filter.End()
+		err = s.handleMilter(resp, err)
+		if err != nil {
+			return err
+		}
+		if s.discarded {
+			return nil
+		}
+		replacedBody := []byte(nil)
 
-	for _, act := range modActions {
-		switch act.Type {
-		case milter.ActionChangeFrom:
-			log.Printf("[%s] ACT = ActionChangeFrom %s %s", s.queueId, act.From, act.FromArgs)
-			s.MailFrom = milter.RemoveAngle(act.From)
-			s.MailFromArgs = act.FromArgs
-		case milter.ActionDelRcpt:
-			log.Printf("[%s] ACT = ActionDelRcpt %s", s.queueId, act.Rcpt)
-			rcpt := milter.RemoveAngle(act.Rcpt)
-		again:
-			for i, r := range s.Recipients {
-				if rcpt == r.Addr {
-					s.Recipients = append(s.Recipients[:i], s.Recipients[i+1:]...)
-					goto again
-				}
-			}
-		case milter.ActionAddRcpt:
-			log.Printf("[%s] ACT = ActionAddRcpt %s %s", s.queueId, act.Rcpt, act.RcptArgs)
-			s.Recipients = append(s.Recipients, Rcpt{Addr: milter.RemoveAngle(act.Rcpt), Args: act.RcptArgs})
-		case milter.ActionReplaceBody:
-			log.Printf("[%s] ACT = ActionReplaceBody %q", s.queueId, act.Body)
-			replacedBody = append(replacedBody, act.Body...)
-		case milter.ActionQuarantine:
-			log.Printf("[%s] ACT = ActionQuarantine %q", s.queueId, act.Reason)
-			s.QuarantineReason = &act.Reason
-		case milter.ActionAddHeader:
-			log.Printf("[%s] ACT = ActionAddHeader %s %q", s.queueId, act.HeaderName, act.HeaderValue)
-			maybeSpace := ""
-			if len(act.HeaderValue) == 0 || (act.HeaderValue[0] != ' ' && act.HeaderValue[0] != '\t') {
-				maybeSpace = " "
-			}
-			raw := fmt.Sprintf("%s:%s%s\r\n", act.HeaderName, maybeSpace, headerValue(act.HeaderValue))
-			headers = append(headers, &field{
-				key:       textproto.CanonicalMIMEHeaderKey(act.HeaderName),
-				changeIdx: -1,
-				raw:       []byte(raw),
-			})
-		case milter.ActionInsertHeader:
-			log.Printf("[%s] ACT = ActionInsertHeader %d %s %q", s.queueId, act.HeaderIndex, act.HeaderName, act.HeaderValue)
-			maybeSpace := ""
-			if len(act.HeaderValue) == 0 || (act.HeaderValue[0] != ' ' && act.HeaderValue[0] != '\t') {
-				maybeSpace = " "
-			}
-			raw := fmt.Sprintf("%s:%s%s\r\n", act.HeaderName, maybeSpace, headerValue(act.HeaderValue))
-			f := &field{
-				key:       textproto.CanonicalMIMEHeaderKey(act.HeaderName),
-				changeIdx: -1,
-				raw:       []byte(raw),
-			}
-			if act.HeaderIndex == 0 {
-				headers = append([]*field{f}, headers...)
-			} else if act.HeaderIndex == 1 { // special case: skip our received line
-				headers = append(headers[:1], append([]*field{f}, headers[1:]...)...)
-			} else if len(headers) < int(act.HeaderIndex)-1 {
-				headers = append(headers, f)
-			} else {
-				idx := int(act.HeaderIndex) - 1
-				headers = append(headers[:idx], append([]*field{f}, headers[idx:]...)...)
-			}
-		case milter.ActionChangeHeader:
-			log.Printf("[%s] ACT = ActionChangeHeader %d %s %q", s.queueId, act.HeaderIndex, act.HeaderName, act.HeaderValue)
-			maybeSpace := ""
-			if len(act.HeaderValue) == 0 || (act.HeaderValue[0] != ' ' && act.HeaderValue[0] != '\t') {
-				maybeSpace = " "
-			}
-			raw := fmt.Sprintf("%s:%s%s\r\n", act.HeaderName, maybeSpace, headerValue(act.HeaderValue))
-			key := textproto.CanonicalMIMEHeaderKey(act.HeaderName)
-			for _, f := range headers {
-				if f.key == key && f.changeIdx == int(act.HeaderIndex) {
-					if act.HeaderValue == "" {
-						f.raw = nil
-					} else {
-						f.raw = []byte(raw)
+		for _, act := range modActions {
+			log.Printf("[%s] Milter modify action: %s", s.queueId, act)
+			switch act.Type {
+			case milter.ActionChangeFrom:
+				log.Printf("[%s] ACT = ActionChangeFrom %s %s", s.queueId, act.From, act.FromArgs)
+				s.MailFrom = milter.RemoveAngle(act.From)
+				s.MailFromArgs = act.FromArgs
+			case milter.ActionDelRcpt:
+				log.Printf("[%s] ACT = ActionDelRcpt %s", s.queueId, act.Rcpt)
+				rcpt := milter.RemoveAngle(act.Rcpt)
+			again:
+				for i, r := range s.Recipients {
+					if rcpt == r.Addr {
+						s.Recipients = append(s.Recipients[:i], s.Recipients[i+1:]...)
+						goto again
 					}
-					break
+				}
+			case milter.ActionAddRcpt:
+				log.Printf("[%s] ACT = ActionAddRcpt %s %s", s.queueId, act.Rcpt, act.RcptArgs)
+				s.Recipients = append(s.Recipients, Rcpt{Addr: milter.RemoveAngle(act.Rcpt), Args: act.RcptArgs})
+			case milter.ActionReplaceBody:
+				log.Printf("[%s] ACT = ActionReplaceBody %q", s.queueId, act.Body)
+				replacedBody = append(replacedBody, act.Body...)
+			case milter.ActionQuarantine:
+				log.Printf("[%s] ACT = ActionQuarantine %q", s.queueId, act.Reason)
+				s.QuarantineReason = &act.Reason
+			case milter.ActionAddHeader:
+				log.Printf("[%s] ACT = ActionAddHeader %s %q", s.queueId, act.HeaderName, act.HeaderValue)
+				maybeSpace := ""
+				if len(act.HeaderValue) == 0 || (act.HeaderValue[0] != ' ' && act.HeaderValue[0] != '\t') {
+					maybeSpace = " "
+				}
+				raw := fmt.Sprintf("%s:%s%s\r\n", act.HeaderName, maybeSpace, headerValue(act.HeaderValue))
+				headers = append(headers, &field{
+					key:       textproto.CanonicalMIMEHeaderKey(act.HeaderName),
+					changeIdx: -1,
+					raw:       []byte(raw),
+				})
+			case milter.ActionInsertHeader:
+				log.Printf("[%s] ACT = ActionInsertHeader %d %s %q", s.queueId, act.HeaderIndex, act.HeaderName, act.HeaderValue)
+				maybeSpace := ""
+				if len(act.HeaderValue) == 0 || (act.HeaderValue[0] != ' ' && act.HeaderValue[0] != '\t') {
+					maybeSpace = " "
+				}
+				raw := fmt.Sprintf("%s:%s%s\r\n", act.HeaderName, maybeSpace, headerValue(act.HeaderValue))
+				f := &field{
+					key:       textproto.CanonicalMIMEHeaderKey(act.HeaderName),
+					changeIdx: -1,
+					raw:       []byte(raw),
+				}
+				if act.HeaderIndex == 0 {
+					headers = append([]*field{f}, headers...)
+				} else if act.HeaderIndex == 1 { // special case: skip our received line
+					headers = append(headers[:1], append([]*field{f}, headers[1:]...)...)
+				} else if len(headers) < int(act.HeaderIndex)-1 {
+					headers = append(headers, f)
+				} else {
+					idx := int(act.HeaderIndex) - 1
+					headers = append(headers[:idx], append([]*field{f}, headers[idx:]...)...)
+				}
+			case milter.ActionChangeHeader:
+				log.Printf("[%s] ACT = ActionChangeHeader %d %s %q", s.queueId, act.HeaderIndex, act.HeaderName, act.HeaderValue)
+				maybeSpace := ""
+				if len(act.HeaderValue) == 0 || (act.HeaderValue[0] != ' ' && act.HeaderValue[0] != '\t') {
+					maybeSpace = " "
+				}
+				raw := fmt.Sprintf("%s:%s%s\r\n", act.HeaderName, maybeSpace, headerValue(act.HeaderValue))
+				key := textproto.CanonicalMIMEHeaderKey(act.HeaderName)
+				for _, f := range headers {
+					if f.key == key && f.changeIdx == int(act.HeaderIndex) {
+						if act.HeaderValue == "" {
+							f.raw = nil
+						} else {
+							f.raw = []byte(raw)
+						}
+						break
+					}
 				}
 			}
 		}
-	}
-	if s.QuarantineReason != nil {
-		return nil
-	}
-	if replacedBody != nil {
-		s.Body = replacedBody
+		if s.QuarantineReason != nil {
+			log.Printf("[%s] milter quarantine reason %q", s.queueId, s.QuarantineReason)
+			return nil
+		}
+		if replacedBody != nil {
+			s.Body = replacedBody
+		}
+	} else {
+		log.Printf("[%s] skip milter End", s.queueId)
 	}
 
 	data = nil
@@ -435,6 +496,7 @@ func (s *Session) Data(r io.Reader) error {
 	data = append(data, '\r', '\n')
 	data = append(data, s.Body...)
 
+	log.Printf("[%s] enqueue msg From %q FromArgs %q Recipients %v Data %q", s.queueId, s.MailFrom, s.MailFromArgs, s.Recipients, string(data))
 	queue <- Msg{
 		From:       s.MailFrom,
 		FromArgs:   s.MailFromArgs,
@@ -448,12 +510,15 @@ func (s *Session) Data(r io.Reader) error {
 func (s *Session) Reset() {
 	log.Printf("[%s] Reset", s.queueId)
 	_ = s.filter.Abort(nil)
+	s.discarded = false
+	s.accepted = false
 	s.Body = nil
 	s.Recipients = nil
 }
 
 func (s *Session) Logout() error {
 	log.Printf("[%s] Logout", s.queueId)
+	_ = s.filter.Close()
 	return nil
 }
 

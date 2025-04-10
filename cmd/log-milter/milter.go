@@ -8,86 +8,92 @@ import (
 )
 
 type LogMilter struct {
-	logPrefix   string
+	id          uint64
 	macroValues map[milter.MacroName]string
 }
 
-func (l *LogMilter) log(format string, v ...interface{}) {
-	log.Printf(fmt.Sprintf("[%s] %s", l.logPrefix, format), v...)
+func (l *LogMilter) log(format string, v ...any) {
+	log.Printf(fmt.Sprintf("[%d] %s", l.id, format), v...)
 }
 
-func (l *LogMilter) Connect(host string, family string, port uint16, addr string, m *milter.Modifier) (*milter.Response, error) {
+func (l *LogMilter) NewConnection(m milter.Modifier) error {
+	l.id = m.MilterId()
+	l.log("NewConnection")
+	return nil
+}
+
+func (l *LogMilter) Connect(host string, family string, port uint16, addr string, m milter.Modifier) (*milter.Response, error) {
 	l.log("CONNECT host = %q, family = %q, port = %d, addr = %q", host, family, port, addr)
 	l.outputChangedMacros(m)
 	return milter.RespContinue, nil
 }
 
-func (l *LogMilter) Helo(name string, m *milter.Modifier) (*milter.Response, error) {
+func (l *LogMilter) Helo(name string, m milter.Modifier) (*milter.Response, error) {
 	l.log("HELO %q", name)
 	l.outputChangedMacros(m)
 	return milter.RespContinue, nil
 }
 
-func (l *LogMilter) MailFrom(from string, esmtpArgs string, m *milter.Modifier) (*milter.Response, error) {
+func (l *LogMilter) MailFrom(from string, esmtpArgs string, m milter.Modifier) (*milter.Response, error) {
 	l.log("MAIL FROM <%s> %s", from, esmtpArgs)
 	l.outputChangedMacros(m)
 	return milter.RespContinue, nil
 }
 
-func (l *LogMilter) RcptTo(rcptTo string, esmtpArgs string, m *milter.Modifier) (*milter.Response, error) {
+func (l *LogMilter) RcptTo(rcptTo string, esmtpArgs string, m milter.Modifier) (*milter.Response, error) {
 	l.log("RCPT TO <%s> %s", rcptTo, esmtpArgs)
 	l.outputChangedMacros(m)
 	return milter.RespContinue, nil
 }
 
-func (l *LogMilter) Data(m *milter.Modifier) (*milter.Response, error) {
+func (l *LogMilter) Data(m milter.Modifier) (*milter.Response, error) {
 	l.log("DATA")
 	l.outputChangedMacros(m)
 	return milter.RespContinue, nil
 }
 
-func (l *LogMilter) Header(name string, value string, m *milter.Modifier) (*milter.Response, error) {
+func (l *LogMilter) Header(name string, value string, m milter.Modifier) (*milter.Response, error) {
 	l.log("HEADER %s: %q", name, value)
 	l.outputChangedMacros(m)
 	return milter.RespContinue, nil
 }
 
-func (l *LogMilter) Headers(m *milter.Modifier) (*milter.Response, error) {
+func (l *LogMilter) Headers(m milter.Modifier) (*milter.Response, error) {
 	l.log("EOH")
 	l.outputChangedMacros(m)
 	return milter.RespContinue, nil
 }
 
-func (l *LogMilter) BodyChunk(chunk []byte, m *milter.Modifier) (*milter.Response, error) {
+func (l *LogMilter) BodyChunk(chunk []byte, m milter.Modifier) (*milter.Response, error) {
 	l.log("BODY CHUNK size = %d", len(chunk))
 	l.outputChangedMacros(m)
 	return milter.RespContinue, nil
 }
 
-func (l *LogMilter) EndOfMessage(m *milter.Modifier) (*milter.Response, error) {
+func (l *LogMilter) EndOfMessage(m milter.Modifier) (*milter.Response, error) {
 	l.log("EOM")
 	l.outputChangedMacros(m)
 	return milter.RespAccept, nil
 }
 
-func (l *LogMilter) Abort(m *milter.Modifier) error {
+func (l *LogMilter) Abort(m milter.Modifier) error {
 	l.log("ABORT")
 	l.outputChangedMacros(m)
 	return nil
 }
 
-func (l *LogMilter) Unknown(cmd string, m *milter.Modifier) (*milter.Response, error) {
+func (l *LogMilter) Unknown(cmd string, m milter.Modifier) (*milter.Response, error) {
 	l.log("UNKNOWN %q", cmd)
 	l.outputChangedMacros(m)
 	return milter.RespContinue, nil
 }
 
-func (l *LogMilter) Cleanup() {
+func (l *LogMilter) Cleanup(m milter.Modifier) {
 	l.log("cleanup")
 	l.macroValues = nil
 }
 
-func (l *LogMilter) outputChangedMacros(m *milter.Modifier) {
+func (l *LogMilter) outputChangedMacros(m milter.Modifier) {
 	if l.macroValues == nil {
 		l.macroValues = make(map[milter.MacroName]string)
 	}
@@ -131,7 +137,7 @@ func (l *LogMilter) outputChangedMacros(m *milter.Modifier) {
 		milter.MacroDateSecondsCurrent,
 	} {
 		oldValue := l.macroValues[name]
-		newValue := m.Macros.Get(name)
+		newValue := m.Get(name)
 		if oldValue != newValue {
 			if oldValue != "" {
 				l.log("  macro %s value %q -> %q", name, oldValue, newValue)
@@ -142,3 +148,5 @@ func (l *LogMilter) outputChangedMacros(m *milter.Modifier) {
 		l.macroValues[name] = newValue
 	}
 }
+
+var _ milter.Milter = (*LogMilter)(nil)

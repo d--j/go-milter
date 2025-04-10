@@ -12,16 +12,17 @@ var LevelFourLogger = log.New(os.Stdout, "   = ", 0)
 
 func main() {
 	config := ParseConfig()
-	defer config.Cleanup()
 	receiver := Receiver{Config: config}
 	if err := receiver.Start(); err != nil {
+		config.Cleanup()
 		LevelOneLogger.Fatal(err)
 	}
-	defer receiver.Cleanup()
 	runner := NewRunner(config, &receiver)
+	exitCode := 0
 	if !runner.Run() {
-		receiver.Cleanup()
-		config.Cleanup()
-		os.Exit(1)
+		exitCode = 1
 	}
+	receiver.Cleanup()
+	config.Cleanup()
+	os.Exit(exitCode)
 }

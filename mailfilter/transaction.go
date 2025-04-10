@@ -172,7 +172,7 @@ func (t *transaction) hasModifications() bool {
 	return false
 }
 
-func (t *transaction) sendModifications(m *milter.Modifier) error {
+func (t *transaction) sendModifications(m milter.Modifier) error {
 	defer func() {
 		t.closeReplacementBody()
 	}()

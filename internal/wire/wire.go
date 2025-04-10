@@ -10,12 +10,23 @@ import (
 	"time"
 )
 
+//go:generate go tool stringer -type=Code,ActionCode,ModifyActCode -output=wire_string.go
+
 type Code byte
 
 // Message represents a command sent from milter client
 type Message struct {
 	Code Code
 	Data []byte
+}
+
+// MacroCode returns the Code this CodeMacro message is about.
+// If the message is not a CodeMacro message, it returns the Code itself.
+func (m *Message) MacroCode() Code {
+	if m.Code == CodeMacro && len(m.Data) > 0 {
+		return Code(m.Data[0])
+	}
+	return m.Code
 }
 
 type ActionCode byte

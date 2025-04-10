@@ -23,21 +23,23 @@ type backend struct {
 	bodySize     int64
 }
 
-func (b *backend) decideOrContinue(stage DecisionAt, m *milter.Modifier) (*milter.Response, error) {
+func (b *backend) decideOrContinue(stage DecisionAt, m milter.Modifier) (*milter.Response, error) {
 	if b.opts.decisionAt == stage && !b.transaction.hasDecision {
 		b.makeDecision(m)
 		if !b.transaction.hasModifications() {
 			if b.transaction.decisionErr != nil {
 				return b.error(b.transaction.decisionErr)
 			}
-			return b.transaction.response(), nil
+			response := b.transaction.response()
+			b.readyForNewMessage()
+			return response, nil
 		}
 	}
 	return milter.RespContinue, nil
 }
 
 func (b *backend) error(err error) (*milter.Response, error) {
-	b.Cleanup()
+	b.Cleanup(nil)
 	switch b.opts.errorHandling {
 	case Error:
 		return nil, err
@@ -55,7 +57,7 @@ func (b *backend) error(err error) (*milter.Response, error) {
 	}
 }
 
-func (b *backend) makeDecision(m *milter.Modifier) {
+func (b *backend) makeDecision(m milter.Modifier) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -71,7 +73,7 @@ func (b *backend) makeDecision(m *milter.Modifier) {
 			return
 		case <-ticker.C:
 			err := m.Progress()
-			if err != nil {
+			if err != nil && !errors.Is(err, milter.ErrVersionTooLow) {
 				// instruct decision function to abort
 				cancel()
 				// wait for decision function
@@ -87,50 +89,58 @@ func (b *backend) makeDecision(m *milter.Modifier) {
 	}
 }
 
-func (b *backend) Connect(host string, family string, port uint16, addr string, m *milter.Modifier) (*milter.Response, error) {
-	b.Cleanup()
+func (b *backend) NewConnection(m milter.Modifier) error {
+	b.Cleanup(m)
+	return nil
+}
+
+func (b *backend) Connect(host string, family string, port uint16, addr string, m milter.Modifier) (*milter.Response, error) {
+	b.Cleanup(m)
 	b.transaction.mta = MTA{
-		Version: m.Macros.Get(milter.MacroMTAVersion),
-		FQDN:    m.Macros.Get(milter.MacroMTAFQDN),
-		Daemon:  m.Macros.Get(milter.MacroDaemonName),
+		Version: m.Get(milter.MacroMTAVersion),
+		FQDN:    m.Get(milter.MacroMTAFQDN),
+		Daemon:  m.Get(milter.MacroDaemonName),
 	}
 	b.transaction.connect = Connect{
 		Host:   host,
 		Family: family,
 		Port:   port,
 		Addr:   addr,
-		IfName: m.Macros.Get(milter.MacroIfName),
-		IfAddr: m.Macros.Get(milter.MacroIfAddr),
+		IfName: m.Get(milter.MacroIfName),
+		IfAddr: m.Get(milter.MacroIfAddr),
 	}
 	return b.decideOrContinue(DecisionAtConnect, m)
 }
 
-func (b *backend) Helo(name string, m *milter.Modifier) (*milter.Response, error) {
+func (b *backend) Helo(name string, m milter.Modifier) (*milter.Response, error) {
 	if b.transaction.hasDecision {
 		return milter.RespContinue, nil
 	}
 	b.transaction.helo = Helo{
 		Name:        name,
-		TlsVersion:  m.Macros.Get(milter.MacroTlsVersion),
-		Cipher:      m.Macros.Get(milter.MacroCipher),
-		CipherBits:  m.Macros.Get(milter.MacroCipherBits),
-		CertSubject: m.Macros.Get(milter.MacroCertSubject),
-		CertIssuer:  m.Macros.Get(milter.MacroCertIssuer),
+		TlsVersion:  m.Get(milter.MacroTlsVersion),
+		Cipher:      m.Get(milter.MacroCipher),
+		CipherBits:  m.Get(milter.MacroCipherBits),
+		CertSubject: m.Get(milter.MacroCertSubject),
+		CertIssuer:  m.Get(milter.MacroCertIssuer),
 	}
 	return b.decideOrContinue(DecisionAtHelo, m)
 }
 
-func (b *backend) MailFrom(from string, esmtpArgs string, m *milter.Modifier) (*milter.Response, error) {
+func (b *backend) MailFrom(from string, esmtpArgs string, m milter.Modifier) (*milter.Response, error) {
 	if b.transaction.hasDecision {
 		return milter.RespContinue, nil
 	}
-	b.transaction.origMailFrom = addr.NewMailFrom(from, esmtpArgs, m.Macros.Get(milter.MacroMailMailer), m.Macros.Get(milter.MacroAuthAuthen), m.Macros.Get(milter.MacroAuthType))
+	b.transaction.origMailFrom = addr.NewMailFrom(from, esmtpArgs, m.Get(milter.MacroMailMailer), m.Get(milter.MacroAuthAuthen), m.Get(milter.MacroAuthType))
 	return b.decideOrContinue(DecisionAtMailFrom, m)
 }
 
-func (b *backend) RcptTo(rcptTo string, esmtpArgs string, m *milter.Modifier) (*milter.Response, error) {
+func (b *backend) RcptTo(rcptTo string, esmtpArgs string, m milter.Modifier) (*milter.Response, error) {
 	if b.transaction.hasDecision {
-		return milter.RespSkip, nil
+		if m.Protocol()&milter.OptSkip != 0 {
+			return milter.RespSkip, nil
+		}
+		return milter.RespContinue, nil
 	}
 	if b.opts.rcptToValidator != nil {
 		ticker := time.NewTicker(time.Second)
@@ -150,7 +160,7 @@ func (b *backend) RcptTo(rcptTo string, esmtpArgs string, m *milter.Modifier) (*
 				Connect:  &connectCopy,
 				Helo:     &heloCopy,
 				MailFrom: b.transaction.MailFrom().Copy(),
-				RcptTo:   addr.NewRcptTo(rcptTo, esmtpArgs, m.Macros.Get(milter.MacroRcptMailer)),
+				RcptTo:   addr.NewRcptTo(rcptTo, esmtpArgs, m.Get(milter.MacroRcptMailer)),
 			})
 			done <- ret{dec, err}
 		}()
@@ -162,7 +172,7 @@ func (b *backend) RcptTo(rcptTo string, esmtpArgs string, m *milter.Modifier) (*
 					return b.error(r.Err)
 				}
 				if r.Decision == nil || r.Decision.Equal(Accept) {
-					b.transaction.origRcptTos = append(b.transaction.origRcptTos, addr.NewRcptTo(rcptTo, esmtpArgs, m.Macros.Get(milter.MacroRcptMailer)))
+					b.transaction.origRcptTos = append(b.transaction.origRcptTos, addr.NewRcptTo(rcptTo, esmtpArgs, m.Get(milter.MacroRcptMailer)))
 					return milter.RespContinue, nil
 				} else {
 					if r.Decision == Discard {
@@ -173,7 +183,7 @@ func (b *backend) RcptTo(rcptTo string, esmtpArgs string, m *milter.Modifier) (*
 				}
 			case <-ticker.C:
 				err := m.Progress()
-				if err != nil {
+				if err != nil && !errors.Is(err, milter.ErrVersionTooLow) {
 					// the connection broke, instruct validator function to abort
 					cancel()
 					// wait for validator function
@@ -188,22 +198,25 @@ func (b *backend) RcptTo(rcptTo string, esmtpArgs string, m *milter.Modifier) (*
 			}
 		}
 	} else {
-		b.transaction.origRcptTos = append(b.transaction.origRcptTos, addr.NewRcptTo(rcptTo, esmtpArgs, m.Macros.Get(milter.MacroRcptMailer)))
+		b.transaction.origRcptTos = append(b.transaction.origRcptTos, addr.NewRcptTo(rcptTo, esmtpArgs, m.Get(milter.MacroRcptMailer)))
 		return milter.RespContinue, nil
 	}
 }
 
-func (b *backend) Data(m *milter.Modifier) (*milter.Response, error) {
+func (b *backend) Data(m milter.Modifier) (*milter.Response, error) {
 	if b.transaction.hasDecision {
 		return milter.RespContinue, nil
 	}
-	b.transaction.queueId = m.Macros.Get(milter.MacroQueueId)
+	b.transaction.queueId = m.Get(milter.MacroQueueId)
 	return b.decideOrContinue(DecisionAtData, m)
 }
 
-func (b *backend) Header(name string, value string, _ *milter.Modifier) (*milter.Response, error) {
+func (b *backend) Header(name string, value string, m milter.Modifier) (*milter.Response, error) {
 	if b.transaction.hasDecision {
-		return milter.RespSkip, nil
+		if m.Protocol()&milter.OptSkip != 0 {
+			return milter.RespSkip, nil
+		}
+		return milter.RespContinue, nil
 	}
 	b.headerCount++
 	if b.headerCount > uint64(b.opts.header.Max) {
@@ -236,16 +249,19 @@ func (b *backend) Header(name string, value string, _ *milter.Modifier) (*milter
 	return milter.RespContinue, nil
 }
 
-func (b *backend) Headers(m *milter.Modifier) (*milter.Response, error) {
+func (b *backend) Headers(m milter.Modifier) (*milter.Response, error) {
 	if b.transaction.hasDecision {
 		return milter.RespContinue, nil
 	}
 	return b.decideOrContinue(DecisionAtEndOfHeaders, m)
 }
 
-func (b *backend) BodyChunk(chunk []byte, _ *milter.Modifier) (*milter.Response, error) {
+func (b *backend) BodyChunk(chunk []byte, m milter.Modifier) (*milter.Response, error) {
 	if !b.transaction.wantsBodyChunks() {
-		return milter.RespSkip, nil
+		if m.Protocol()&milter.OptSkip != 0 {
+			return milter.RespSkip, nil
+		}
+		return milter.RespContinue, nil
 	}
 	err := b.transaction.addBodyChunk(chunk)
 	if err != nil {
@@ -260,16 +276,16 @@ func (b *backend) BodyChunk(chunk []byte, _ *milter.Modifier) (*milter.Response,
 func (b *backend) readyForNewMessage() {
 	if b.transaction != nil {
 		connect, helo := b.transaction.connect, b.transaction.helo
-		b.Cleanup()
+		b.Cleanup(nil)
 		b.transaction.connect, b.transaction.helo = connect, helo
 	} else {
-		b.Cleanup()
+		b.Cleanup(nil)
 	}
 }
 
-func (b *backend) EndOfMessage(m *milter.Modifier) (*milter.Response, error) {
+func (b *backend) EndOfMessage(m milter.Modifier) (*milter.Response, error) {
 	if !b.transaction.hasDecision && b.transaction.queueId == "" {
-		b.transaction.queueId = m.Macros.Get(milter.MacroQueueId)
+		b.transaction.queueId = m.Get(milter.MacroQueueId)
 	}
 	if !b.transaction.hasDecision {
 		b.makeDecision(m)
@@ -290,14 +306,15 @@ func (b *backend) EndOfMessage(m *milter.Modifier) (*milter.Response, error) {
 	return response, nil
 }
 
-func (b *backend) Abort(_ *milter.Modifier) error {
+func (b *backend) Abort(_ milter.Modifier) error {
 	b.readyForNewMessage()
 	return nil
 }
 
-func (b *backend) Cleanup() {
+func (b *backend) Cleanup(_ milter.Modifier) {
 	if b.transaction != nil {
 		b.transaction.cleanup()
+		b.transaction = nil
 	}
 	b.headerCount = 0
 	b.transaction = &transaction{bodyOpt: *b.opts.body}

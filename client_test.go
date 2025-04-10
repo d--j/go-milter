@@ -18,50 +18,54 @@ import (
 )
 
 type MockMilter struct {
+	NewConnectionCalled int
+	NewConnectionErr    error
+	NewConnectionMod    func(Modifier)
+
 	ConnResp *Response
-	ConnMod  func(m *Modifier)
+	ConnMod  func(Modifier)
 	ConnErr  error
 
 	HeloResp *Response
-	HeloMod  func(m *Modifier)
+	HeloMod  func(Modifier)
 	HeloErr  error
 
 	MailResp *Response
-	MailMod  func(m *Modifier)
+	MailMod  func(Modifier)
 	MailErr  error
 
 	RcptResp *Response
-	RcptMod  func(m *Modifier)
+	RcptMod  func(Modifier)
 	RcptErr  error
 
 	DataResp *Response
-	DataMod  func(m *Modifier)
+	DataMod  func(Modifier)
 	DataErr  error
 
 	HdrResp *Response
-	HdrMod  func(m *Modifier)
+	HdrMod  func(Modifier)
 	HdrErr  error
 
 	HdrsResp *Response
-	HdrsMod  func(m *Modifier)
+	HdrsMod  func(Modifier)
 	HdrsErr  error
 
 	BodyChunkResp *Response
-	BodyChunkMod  func(m *Modifier)
+	BodyChunkMod  func(Modifier)
 	BodyChunkErr  error
 
 	BodyResp *Response
-	BodyMod  func(m *Modifier)
+	BodyMod  func(Modifier)
 	BodyErr  error
 
-	AbortMod func(m *Modifier)
+	AbortMod func(m Modifier)
 	AbortErr error
 
 	UnknownResp *Response
-	UnknownMod  func(m *Modifier)
+	UnknownMod  func(Modifier)
 	UnknownErr  error
 
-	OnClose func()
+	OnClose func(Modifier)
 
 	// Info collected during calls.
 	Host   string
@@ -81,7 +85,15 @@ type MockMilter struct {
 	Cmds []string
 }
 
-func (mm *MockMilter) Connect(host string, family string, port uint16, addr string, m *Modifier) (*Response, error) {
+func (mm *MockMilter) NewConnection(m Modifier) error {
+	mm.NewConnectionCalled++
+	if mm.NewConnectionMod != nil {
+		mm.NewConnectionMod(m)
+	}
+	return mm.NewConnectionErr
+}
+
+func (mm *MockMilter) Connect(host string, family string, port uint16, addr string, m Modifier) (*Response, error) {
 	if mm.ConnMod != nil {
 		mm.ConnMod(m)
 	}
@@ -92,7 +104,7 @@ func (mm *MockMilter) Connect(host string, family string, port uint16, addr stri
 	return mm.ConnResp, mm.ConnErr
 }
 
-func (mm *MockMilter) Helo(name string, m *Modifier) (*Response, error) {
+func (mm *MockMilter) Helo(name string, m Modifier) (*Response, error) {
 	if mm.HeloMod != nil {
 		mm.HeloMod(m)
 	}
@@ -100,7 +112,7 @@ func (mm *MockMilter) Helo(name string, m *Modifier) (*Response, error) {
 	return mm.HeloResp, mm.HeloErr
 }
 
-func (mm *MockMilter) MailFrom(from string, esmtpArgs string, m *Modifier) (*Response, error) {
+func (mm *MockMilter) MailFrom(from string, esmtpArgs string, m Modifier) (*Response, error) {
 	if mm.MailMod != nil {
 		mm.MailMod(m)
 	}
@@ -109,7 +121,7 @@ func (mm *MockMilter) MailFrom(from string, esmtpArgs string, m *Modifier) (*Res
 	return mm.MailResp, mm.MailErr
 }
 
-func (mm *MockMilter) RcptTo(rcptTo string, esmtpArgs string, m *Modifier) (*Response, error) {
+func (mm *MockMilter) RcptTo(rcptTo string, esmtpArgs string, m Modifier) (*Response, error) {
 	if mm.RcptMod != nil {
 		mm.RcptMod(m)
 	}
@@ -118,14 +130,14 @@ func (mm *MockMilter) RcptTo(rcptTo string, esmtpArgs string, m *Modifier) (*Res
 	return mm.RcptResp, mm.RcptErr
 }
 
-func (mm *MockMilter) Data(m *Modifier) (*Response, error) {
+func (mm *MockMilter) Data(m Modifier) (*Response, error) {
 	if mm.DataMod != nil {
 		mm.DataMod(m)
 	}
 	return mm.DataResp, mm.DataErr
 }
 
-func (mm *MockMilter) Header(name string, value string, m *Modifier) (*Response, error) {
+func (mm *MockMilter) Header(name string, value string, m Modifier) (*Response, error) {
 	if mm.HdrMod != nil {
 		mm.HdrMod(m)
 	}
@@ -136,14 +148,14 @@ func (mm *MockMilter) Header(name string, value string, m *Modifier) (*Response,
 	return mm.HdrResp, mm.HdrErr
 }
 
-func (mm *MockMilter) Headers(m *Modifier) (*Response, error) {
+func (mm *MockMilter) Headers(m Modifier) (*Response, error) {
 	if mm.HdrsMod != nil {
 		mm.HdrsMod(m)
 	}
 	return mm.HdrsResp, mm.HdrsErr
 }
 
-func (mm *MockMilter) BodyChunk(chunk []byte, m *Modifier) (*Response, error) {
+func (mm *MockMilter) BodyChunk(chunk []byte, m Modifier) (*Response, error) {
 	if mm.BodyChunkMod != nil {
 		mm.BodyChunkMod(m)
 	}
@@ -151,21 +163,14 @@ func (mm *MockMilter) BodyChunk(chunk []byte, m *Modifier) (*Response, error) {
 	return mm.BodyChunkResp, mm.BodyChunkErr
 }
 
-func (mm *MockMilter) EndOfMessage(m *Modifier) (*Response, error) {
+func (mm *MockMilter) EndOfMessage(m Modifier) (*Response, error) {
 	if mm.BodyMod != nil {
 		mm.BodyMod(m)
 	}
 	return mm.BodyResp, mm.BodyErr
 }
 
-func (mm *MockMilter) Abort(m *Modifier) error {
-	if mm.AbortMod != nil {
-		mm.AbortMod(m)
-	}
-	return mm.AbortErr
-}
-
-func (mm *MockMilter) Unknown(cmd string, m *Modifier) (*Response, error) {
+func (mm *MockMilter) Unknown(cmd string, m Modifier) (*Response, error) {
 	if mm.UnknownMod != nil {
 		mm.UnknownMod(m)
 	}
@@ -173,11 +178,20 @@ func (mm *MockMilter) Unknown(cmd string, m *Modifier) (*Response, error) {
 	return mm.UnknownResp, mm.UnknownErr
 }
 
-func (mm *MockMilter) Cleanup() {
+func (mm *MockMilter) Abort(m Modifier) error {
+	if mm.AbortMod != nil {
+		mm.AbortMod(m)
+	}
+	return mm.AbortErr
+}
+
+func (mm *MockMilter) Cleanup(m Modifier) {
 	if mm.OnClose != nil {
-		mm.OnClose()
+		mm.OnClose(m)
 	}
 }
+
+var _ Milter = (*MockMilter)(nil)
 
 func assertAction(t *testing.T, act *Action, err error, expectCode ActionType) {
 	t.Helper()
@@ -231,12 +245,12 @@ func TestMilterClient_UsualFlow(t *testing.T) {
 		DataResp: RespContinue,
 		HdrResp:  RespContinue,
 		HdrsResp: RespContinue,
-		HdrsMod: func(m *Modifier) {
+		HdrsMod: func(m Modifier) {
 			m.Progress()
 		},
 		BodyChunkResp: RespContinue,
 		BodyResp:      RespContinue,
-		BodyMod: func(m *Modifier) {
+		BodyMod: func(m Modifier) {
 			m.ChangeFrom("changed@example.com", "")
 			m.ChangeFrom("changed@example.com", "A=B")
 			m.AddRecipient("example@example.com", "")
@@ -324,7 +338,7 @@ func TestMilterClient_UsualFlow(t *testing.T) {
 	}
 
 	modifyActs, act, err := w.session.BodyReadFrom(bytes.NewReader(bytes.Repeat([]byte{'A'}, 128000)))
-	assertAction(t, act, err, ActionContinue)
+	assertAction(t, act, err, ActionAccept)
 
 	if len(mm.Chunks) != 2 {
 		t.Fatal("Wrong amount of body chunks received")
@@ -351,7 +365,7 @@ func TestMilterClient_UsualFlow(t *testing.T) {
 		{Type: ActionReplaceBody, Body: []byte{'-'}},
 	}
 	if !reflect.DeepEqual(modifyActs, expected) {
-		t.Fatalf("Wrong modify actions: got %+v", modifyActs)
+		t.Fatalf("Wrong modify actions: got\n%s", modifyActs)
 	}
 }
 
@@ -364,20 +378,21 @@ func TestMilterClient_AbortFlow(t *testing.T) {
 	mm := MockMilter{
 		ConnResp: RespContinue,
 		HeloResp: RespContinue,
-		HeloMod: func(m *Modifier) {
-			heloTls = m.Macros.Get(MacroTlsVersion)
+		HeloMod: func(m Modifier) {
+			heloTls = m.Get(MacroTlsVersion)
 		},
 		MailResp: RespContinue,
-		MailMod: func(m *Modifier) {
-			mailAuthen = m.Macros.Get(MacroAuthAuthen)
+		MailMod: func(m Modifier) {
+			mailAuthen = m.Get(MacroAuthAuthen)
 		},
-		AbortMod: func(m *Modifier) {
-			aborTls = m.Macros.Get(MacroTlsVersion)
+		AbortMod: func(m Modifier) {
+			aborTls = m.Get(MacroTlsVersion)
 			waitChan <- nil
 		},
 	}
 	macros := NewMacroBag()
 	w := newServerClient(t, macros, []Option{WithMilter(func() Milter {
+		// always return the same milter
 		return &mm
 	}), WithActions(OptAddHeader | OptChangeHeader)}, []Option{WithActions(OptAddHeader | OptChangeHeader | OptQuarantine)})
 	defer w.Cleanup()
@@ -429,8 +444,14 @@ func TestMilterClient_AbortFlow(t *testing.T) {
 		t.Fatal("Wrong tls_version macro value: ", aborTls)
 	}
 
+	mm.MailMod = func(m Modifier) {
+		mailAuthen = m.Get(MacroAuthAuthen)
+		waitChan <- nil
+	}
+
 	macros.Set(MacroAuthAuthen, "")
 	act, err = w.session.Mail("another-user@example.com", "")
+	<-waitChan
 	assertAction(t, act, err, ActionContinue)
 	if mm.From != "another-user@example.com" {
 		t.Fatal("Wrong from value:", mm.From)

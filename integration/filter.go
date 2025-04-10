@@ -21,6 +21,7 @@ import (
 
 var Network = flag.String("network", "", "network")
 var Address = flag.String("address", "", "address")
+var ExpectedBackends = flag.Uint("expected-backends", 0, "number of expected backends")
 var Tags []string
 
 const ExitSkip = 99
@@ -44,7 +45,23 @@ func Test(decider mailfilter.DecisionModificationFunc, opts ...mailfilter.Option
 		log.Fatal(err)
 	}
 	log.Printf("Started milter on %s:%s", filter.Addr().Network(), filter.Addr().String())
+
+	// wait for SIGINT or SIGTERM
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sig
+		log.Printf("Gracefully shutting down milter…")
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		filter.Shutdown(ctx)
+	}()
+
 	filter.Wait()
+
+	if filter.MilterCount() != uint64(*ExpectedBackends) {
+		log.Printf("expected %d backends, got %d", *ExpectedBackends, filter.MilterCount())
+	}
 }
 
 func TestServer(opts ...milter.Option) {
@@ -92,6 +109,10 @@ func TestServer(opts ...milter.Option) {
 	}()
 
 	wgDone.Wait()
+
+	if server.MilterCount() != uint64(*ExpectedBackends) {
+		log.Printf("expected %d backends, got %d", *ExpectedBackends, server.MilterCount())
+	}
 }
 
 func HasTag(tag string) bool {

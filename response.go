@@ -159,3 +159,6 @@ var (
 	// No more events get send to the milter after this response.
 	RespSkip = &Response{code: wire.Code(wire.ActSkip)}
 )
+
+// respProgress signals to the MTA that the milter does progress and prevents the MTA to quit the connection
+var respProgress = &Response{code: wire.Code(wire.ActProgress)}
