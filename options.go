@@ -53,7 +53,7 @@ func WithActions(actions OptAction) Option {
 }
 
 // WithProtocol adds protocol to the protocol features your MTA should be able to handle or your [Milter] needs.
-// For MTAs you can normally skip setting this option since we then just default to all protocol feature that this library supports.
+// For MTAs you can normally skip setting this option since we then just default to all protocol features that this library supports.
 // [Milter] should specify this option to instruct the MTA to not send any events that your [Milter] does not need or to not expect any response from events that you are not using to accept or reject an SMTP transaction.
 func WithProtocol(protocol OptProtocol) Option {
 	return func(h *options) {
@@ -69,7 +69,7 @@ func WithoutProtocol(protocol OptProtocol) Option {
 }
 
 // WithProtocols sets the protocol features your MTA should be able to handle or your [Milter] needs.
-// For MTAs you can normally skip setting this option since we then just default to all protocol feature that this library supports.
+// For MTAs you can normally skip setting this option since we then just default to all protocol features that this library supports.
 // Milter should specify this option to instruct the MTA to not send any events that your [Milter] does not need or to not expect any response from events that you are not using to accept or reject an SMTP transaction.
 func WithProtocols(protocol OptProtocol) Option {
 	return func(h *options) {
@@ -85,7 +85,7 @@ func WithMaximumVersion(version uint32) Option {
 	}
 }
 
-// WithDialer sets the [net.Dialer] this [Client] will use. You can use this to e.g. set the connection timeout of the client.
+// WithDialer sets the [net.Dialer] this [Client] will use. You can use this to e.g., set the connection timeout of the client.
 // The default is to use a [net.Dialer] with a connection timeout of 10 seconds.
 func WithDialer(dialer Dialer) Option {
 	return func(h *options) {
@@ -114,7 +114,7 @@ func WithWriteTimeout(timeout time.Duration) Option {
 // WithOfferedMaxData sets the [DataSize] that your MTA wants to offer to milters.
 // The milter needs to accept this offer in protocol negotiation for it to become effective.
 // This is just an indication to the milter that it can send bigger packages.
-// This library does not care what value was negotiated and always accept packages of up to 512 MB.
+// This library does not care what value was negotiated and always accepts packages of up to 512 MB.
 //
 // This is a [Client] only [Option].
 func WithOfferedMaxData(offeredMaxData DataSize) Option {
@@ -125,19 +125,19 @@ func WithOfferedMaxData(offeredMaxData DataSize) Option {
 
 // WithUsedMaxData sets the [DataSize] that your MTA or milter uses to send packages to the other party.
 // The default value is [DataSize64K] for maximum compatibility.
-// If you set this to 0 the [Client] will use the value of [WithOfferedMaxData] and the [Server] will use the dataSize that it
+// If you set this to 0, the [Client] will use the value of [WithOfferedMaxData] and the [Server] will use the dataSize that it
 // negotiated with the MTA.
 //
 // Setting the maximum used data size to something different might trigger the other party to an error.
 // MTAs like Postfix/sendmail and newer libmilter versions can handle bigger values without negotiation.
-// E.g. Postfix will accept packets of up to 2 GB. This library has a hard maximum packet size of 512 MB.
+// E.g., Postfix will accept packets of up to 2 GB. This library has a hard maximum packet size of 512 MB.
 func WithUsedMaxData(usedMaxData DataSize) Option {
 	return func(h *options) {
 		h.usedMaxData = usedMaxData
 	}
 }
 
-// WithoutDefaultMacros deletes all macro stage definitions that were made before this [Option].
+// WithoutDefaultMacros deletes all macro stage definitions made before this [Option].
 // Use it in [NewClient] do not use the default. Since [NewServer] does not have a default, it is a no-op in [NewServer].
 func WithoutDefaultMacros() Option {
 	return func(h *options) {
@@ -147,10 +147,10 @@ func WithoutDefaultMacros() Option {
 
 // WithMacroRequest defines the macros that your [Client] intends to send at stage, or it instructs the [Server] to ask for these macros at this stage.
 //
-// For [Client]: The milter can request other macros at protocol negotiation but if it does not do this (most do not) it will receive these macros at these stages.
+// For [Client]: The milter can request other macros at protocol negotiation, but if it does not do this (most do not), it will receive these macros at these stages.
 //
 // For [Server]: MTAs like sendmail and Postfix honor your macro requests and only send you the macros you requested (even if other macros were configured in their configuration).
-// If it is possible your milter should gracefully handle the case that the MTA does not honor your macro requests.
+// If it is possible, your milter should gracefully handle the case that the MTA does not honor your macro requests.
 // This function automatically sets the action [OptSetMacros]
 func WithMacroRequest(stage MacroStage, macros []MacroName) Option {
 	return func(h *options) {

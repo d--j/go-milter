@@ -48,7 +48,7 @@ func (f *FixedBufferScanner) Bytes() []byte {
 	return f.scanner.Bytes()
 }
 
-// Err returns the first non-EOF error that was encountered by the FixedBufferScanner.
+// Err returns the first non-EOF error encountered by the FixedBufferScanner.
 func (f *FixedBufferScanner) Err() error {
 	return f.scanner.Err()
 }

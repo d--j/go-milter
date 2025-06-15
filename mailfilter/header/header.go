@@ -13,16 +13,16 @@ type Header interface {
 	// Add adds a new field at the end
 	Add(key string, value string)
 	// Value returns the value of the first non-deleted field which canonical key is equal to the canonical version of key.
-	// Returns the empty string when key was not found in header.
+	// Returns the empty string when key was not found in Header.
 	Value(key string) string
 	// UnfoldedValue returns the unfolded value (newlines replaced with spaces) of the first non-deleted field which canonical key is equal to the canonical version of key.
-	// Returns the empty string when key was not found in header.
+	// Returns the empty string when key was not found in Header.
 	UnfoldedValue(key string) string
 	// Text returns the decoded value of the first non-deleted field which canonical key is equal to the canonical version of key.
-	// Returns the empty string and no error when key was not found in header.
+	// Returns the empty string and no error when key was not found in Header.
 	Text(key string) (string, error)
-	// AddressList returns the value interpreted as address list of the first non-deleted field which canonical key is equal to the canonical version of key.
-	// Returns an empty slice and no error when key was not found in header.
+	// AddressList returns the value interpreted as an address list of the first non-deleted field which canonical key is equal to the canonical version of key.
+	// Returns an empty slice and no error when key was not found in Header.
 	AddressList(key string) ([]*mail.Address, error)
 	// Set sets the value of the first header field with the canonical key "key" to "value" (as-is).
 	// If key was not found in the list of non-deleted fields and value is not empty, a new header field gets added.
@@ -32,33 +32,34 @@ type Header interface {
 	// If key was not found in the list of non-deleted fields and value is not empty, a new header field gets added.
 	// When value is the empty string, the first header field with key gets deleted.
 	SetText(key string, value string)
-	// SetAddressList sets the value of the first header field with the canonical key "key" to "value" (encoded as address list).
-	// The address list is encoded as multi-line header field when the MTA supports this (Sendmail does not).
+	// SetAddressList sets the value of the first header field with the canonical key "key" to "value" (encoded as an address list).
+	// The address list is encoded as a multi-line header field when the MTA supports this (Sendmail does not).
 	// If key was not found in the list of non-deleted fields and len(addresses) > 0, a new header field gets added.
 	// If len(addresses) == 0, the first header field with key gets deleted.
 	SetAddressList(key string, addresses []*mail.Address)
 	// Subject returns the decoded value of the Subject field.
-	// When decoding cannot be done (e.g. because the charset is not known) the decoding error will be returned.
-	// When there is no subject an empty string and no error is returned.
+	// When decoding cannot be done (e.g., because the charset is not known) the decoding error will be returned.
+	// When there is no subject, an empty string and no error gets returned.
 	Subject() (string, error)
 	// SetSubject encodes the value of the Subject field.
-	// When there is no subject field a new Subject field gets added.
+	// When there is no Subject field, a new Subject field gets added.
 	// When value is the empty string, the Subject field gets deleted.
 	SetSubject(value string)
 	// Date returns the decoded value of the Date field.
-	// When decoding cannot be done (e.g. because the time cannot be parsed) the decoding error and the zero time value will be returned.
+	// When decoding cannot be done (e.g., because the time cannot be parsed) the decoding error and the zero time value will be returned.
 	// When there is no Date the zero [time.Time] and no error is returned.
 	Date() (time.Time, error)
 	// SetDate encodes the value of the Date field.
 	// When there is no Date field a new Date field gets added.
 	// When value is the zero [time.Time] value, the Date field gets deleted.
 	SetDate(value time.Time)
-	// Reader returns an [io.Reader] that produces a full properly encoded email header representation of the current fields of this header.
+	// Reader returns an [io.Reader] that produces a full properly encoded email header representation of this Header.
+	// It includes all changes you made to the header fields (e.g., added, deleted, or modified fields).
 	// The reader includes the final CR LF sequence that separates a mail header from the body.
 	Reader() io.Reader
-	// Fields returns a new scanner-like iterator that iterates through all fields of this header.
-	// If you modify the header fields while iterating over them (that is explicitly allowed) you should not use multiple
-	// iterators of the same header at the same time.
+	// Fields returns a new scanner-like iterator that iterates through all fields of this Header.
+	// If you modify the header fields while iterating over them (that is explicitly allowed), you should not use multiple
+	// iterators of the same Header at the same time.
 	Fields() Fields
 }
 
@@ -94,22 +95,22 @@ type Fields interface {
 	AddressList() ([]*mail.Address, error)
 	// Set sets the value of the current header field as-is.
 	// If value is empty, the current field will be deleted.
-	// If the current field is a deleted stub and value is not empty, the field will be un-deleted after this call.
+	// If the current field is a deleted stub and value is not empty, the field will be undeleted after this call.
 	// Panics when called before calling Next or when Next returned false.
 	Set(value string)
 	// SetText sets the value of the current header field as encoded text.
 	// If value is empty, the current field will be deleted.
-	// If the current field is a deleted stub and value is not empty, the field will be un-deleted after this call.
+	// If the current field is a deleted stub and value is not empty, the field will be undeleted after this call.
 	// Panics when called before calling Next or when Next returned false.
 	SetText(value string)
-	// SetAddressList sets the value of the current header field as address list value.
+	// SetAddressList sets the value of the current header field as an address list value.
 	// If value is empty, the current field will be deleted.
-	// If the current field is a deleted stub and value is not empty, the field will be un-deleted after this call.
-	// The value is encoded as multi-line header field when the MTA supports this (Sendmail does not).
+	// If the current field is a deleted stub and value is not empty, the field will be undeleted after this call.
+	// The value is encoded as a multi-line header field when the MTA supports this (Sendmail does not).
 	// Panics when called before calling Next or when Next returned false.
 	SetAddressList(value []*mail.Address)
 	// Del marks the current header field as deleted.
-	// Alternatively you can set the value to an empty string to delete a field.
+	// Alternatively, you can set the value to an empty string to delete a field.
 	// Panics when called before calling Next or when Next returned false.
 	Del()
 	// IsDeleted returns true when the current field is a deleted stub.
@@ -125,7 +126,7 @@ type Fields interface {
 	ReplaceText(key string, value string)
 	// ReplaceAddressList replaces the current field with a new field with key and value.
 	// If the current field is a deleted stub, the replacement will not be deleted.
-	// The value is encoded as multi-line header field when the MTA supports this (Sendmail does not).
+	// The value is encoded as a multi-line header field when the MTA supports this (Sendmail does not).
 	// Panics when called before calling Next or when Next returned false.
 	ReplaceAddressList(key string, value []*mail.Address)
 	// InsertBefore adds a new field in front of the current field with key and value (as-is).
@@ -135,7 +136,7 @@ type Fields interface {
 	// Panics when called before calling Next or when Next returned false.
 	InsertTextBefore(key string, value string)
 	// InsertAddressListBefore adds a new field in front of the current field with key and value.
-	// The value is encoded as multi-line header field when the MTA supports this (Sendmail does not).
+	// The value is encoded as a multi-line header field when the MTA supports this (Sendmail does not).
 	// Panics when called before calling Next or when Next returned false.
 	InsertAddressListBefore(key string, value []*mail.Address)
 	// InsertAfter adds a new field after the current field with key and value (as-is).
@@ -147,7 +148,7 @@ type Fields interface {
 	// Panics when called before calling Next or when Next returned false.
 	InsertTextAfter(key string, value string)
 	// InsertAddressListAfter adds a new field after the current field with key and value.
-	// The value is encoded as multi-line header field when the MTA supports this (Sendmail does not).
+	// The value is encoded as a multi-line header field when the MTA supports this (Sendmail does not).
 	// The next call to Next will skip this inserted field. A new Fields iterator will include this field.
 	// Panics when called before calling Next or when Next returned false.
 	InsertAddressListAfter(key string, value []*mail.Address)

@@ -12,8 +12,8 @@ import (
 // This defaults to [idna.Lookup] but you can use any [*idna.Profile] you like.
 var IDNAProfile = idna.Lookup
 
-// split an user@domain address into user and domain.
-// Includes the input address as third array element to quickly check if splitting must be re-done
+// split a user@domain address into user and domain.
+// Includes the input address as the third array element to quickly check if split must be called again.
 func split(addr string) []string {
 	at := strings.LastIndex(addr, "@")
 	if at < 0 {
@@ -40,21 +40,21 @@ func (a *addr) initParts() {
 }
 
 // Local returns the part of an email in front of the @ symbol.
-// If the address does not include an @ the whole address get returned.
+// If the address does not include an @, the whole address gets returned.
 func (a *addr) Local() string {
 	a.initParts()
 	return a.parts[0]
 }
 
 // Domain returns the part of an email after the @ symbol. It is returned as-is without any validation.
-// If the address does not include an @ an empty string gets returned.
+// If the address does not include an @, an empty string gets returned.
 func (a *addr) Domain() string {
 	a.initParts()
 	return a.parts[1]
 }
 
 // AsciiDomain returns Domain interpreted and converted as the ASCII representation.
-// If Domain cannot be converted (e.g. invalid UTF-8 data), the unchanged Domain value gets returned.
+// If Domain cannot be converted (e.g., invalid UTF-8 data), the unchanged Domain value gets returned.
 func (a *addr) AsciiDomain() string {
 	domain := a.Domain()
 	if domain == "" {
@@ -74,7 +74,7 @@ func (a *addr) AsciiDomain() string {
 }
 
 // UnicodeDomain returns Domain interpreted and converted as the UTF-8 representation.
-// If Domain cannot be converted (e.g. invalid UTF-8 data), the unchanged Domain value gets returned.
+// If Domain cannot be converted (e.g., invalid UTF-8 data), the unchanged Domain value gets returned.
 func (a *addr) UnicodeDomain() string {
 	domain := a.Domain()
 	if domain == "" {
@@ -111,17 +111,17 @@ func NewMailFrom(from, esmtpArgs, transport, authenticatedUser, authenticationMe
 	}
 }
 
-// Transport returns the used transport. You might use this to e.g. distinguish local generated mail from incoming mail.
+// Transport returns the used transport. You might use this to e.g., distinguish local generated mail from incoming mail.
 func (m *MailFrom) Transport() string {
 	return m.transport
 }
 
-// AuthenticatedUser is the username of the logged-in user. It is empty, when there is no login.
+// AuthenticatedUser is the username of the logged-in user. It is empty when there is no login.
 func (m *MailFrom) AuthenticatedUser() string {
 	return m.authenticatedUser
 }
 
-// AuthenticationMethod is the used method of authentication. E.g. "PLAIN" or "CRAM-MD5". It is empty, when there is no login.
+// AuthenticationMethod is the used method of authentication. E.g. "PLAIN" or "CRAM-MD5". It is empty when there is no login.
 func (m *MailFrom) AuthenticationMethod() string {
 	return m.authenticationMethod
 }
@@ -153,7 +153,7 @@ func NewRcptTo(to, esmtpArgs, transport string) *RcptTo {
 	}
 }
 
-// Transport returns the next-hop transport . You might use this to e.g. distinguish a local recipient from an external recipient.
+// Transport returns the next-hop transport. You might use this to e.g., distinguish a local recipient from an external recipient.
 func (r *RcptTo) Transport() string {
 	return r.transport
 }

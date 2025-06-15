@@ -30,7 +30,7 @@ type serverSession struct {
 	modifier    *modifier
 }
 
-// init sets up internal state of the session
+// init sets up the internal state of the session
 func (m *serverSession) init(server *Server, conn net.Conn, version uint32, actions OptAction, protocol OptProtocol) {
 	m.server = server
 	m.conn = conn
@@ -426,7 +426,7 @@ func (m *serverSession) HandleMilterCommands() {
 		}
 
 		// Postfix always sends us an Abort when an SMTP connection gets reused.
-		// Sendmail does not do that, when we accepted/rejected the message before EOB.
+		// Sendmail does not do that when we accepted/rejected the message before EOB.
 		// We synthesize an Abort message to the backend when we detect that an Abort was not sent.
 		// This is not really necessary (the backend should be able to handle this), but it does not hurt
 		// and makes Milter backend development less error-prone.

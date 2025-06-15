@@ -40,7 +40,7 @@ type Action struct {
 }
 
 // StopProcessing returns true when the milter wants to immediately stop this SMTP connection or reject this recipient.
-// (a.Type is one of ActionReject, ActionTempFail or ActionRejectWithCode).
+// (Action.Type is one of ActionReject, ActionTempFail or ActionRejectWithCode).
 // You can use [Action.SMTPReply] to send as reply to the current SMTP command.
 func (a Action) StopProcessing() bool {
 	switch a.Type {
@@ -140,14 +140,14 @@ type ModifyAction struct {
 	// This value already includes the necessary <>.
 	Rcpt string
 
-	// ESMTP arguments for recipient address if Type = ActionAddRcpt.
+	// ESMTP arguments for the recipient address if Type = ActionAddRcpt.
 	RcptArgs string
 
 	// New envelope sender if Type = ActionChangeFrom.
 	// This value already includes the necessary <>.
 	From string
 
-	// ESMTP arguments for envelope sender if Type = ActionChangeFrom.
+	// ESMTP arguments for the envelope sender if Type = ActionChangeFrom.
 	FromArgs string
 
 	// Portion of body to be replaced if Type == ActionReplaceBody.
@@ -157,15 +157,15 @@ type ModifyAction struct {
 	// Index is 1-based.
 	//
 	// If Type = ActionChangeHeader the index is per canonical value of HdrName.
-	// E.g. HeaderIndex = 3 and HdrName = "DKIM-Signature" means "change third field with the canonical header name Dkim-Signature".
+	// E.g., HeaderIndex = 3 and HdrName = "DKIM-Signature" means "change the third field with the canonical header name Dkim-Signature".
 	// Order is the same as of HeaderField calls.
 	//
 	// If Type = ActionInsertHeader the index is global to all headers, 1-based and means "insert after the HeaderIndex header".
 	// A HeaderIndex of 0 has the special meaning "at the very beginning".
 	//
 	// Deleted headers (Type = ActionChangeHeader and HeaderValue == "") may change the indexes of the other headers.
-	// Postfix MTA removes the header from the linked list (and thus change the indexes of headers coming after the deleted header).
-	// Sendmail on the other hand will only mark the header as deleted.
+	// Postfix MTA removes the header from the linked list (and thus changes the indexes of headers coming after the deleted header).
+	// Sendmail, on the other hand, will only mark the header as deleted.
 	// To be consistent, you should delete headers in reverse order.
 	HeaderIndex uint32
 
@@ -359,10 +359,10 @@ type Modifier interface {
 	// You should do the ReplaceBodyRawChunk calls all in one go without intersecting it with other modification actions.
 	// MTAs like Postfix do not allow that.
 	ReplaceBodyRawChunk(chunk []byte) error
-	// ReplaceBody reads from r and send its contents in the least amount of chunks to the MTA.
+	// ReplaceBody reads from r and sends its contents in the least number of chunks to the MTA.
 	//
 	// This function does not do any CR LF line ending canonicalization or maximum line length enforcements.
-	// If you need that you can use the various transform.Transformers of the milterutil package to wrap your reader.
+	// If you need that, you can use the various transform.Transformers of the milterutil package to wrap your reader.
 	//
 	//	t := transform.Chain(&milterutil.CrLfCanonicalizationTransformer{}, &milterutil.MaximumLineLengthTransformer{})
 	//	wrappedR := transform.NewReader(r, t)
@@ -379,12 +379,12 @@ type Modifier interface {
 	Quarantine(reason string) error
 	// AddHeader appends a new email message header to the message
 	//
-	// Unfortunately when interacting with Sendmail it is not guaranteed that the header
+	// Unfortunately, when interacting with Sendmail it is not guaranteed that the header
 	// will be added at the end. If Sendmail has a (maybe deleted) header of the same name
 	// in the list of headers, this header will be altered/re-used instead of adding a new
 	// header at the end.
 	//
-	// If you always want to add the header at the very end you need to use InsertHeader with
+	// If you always want to add the header at the very end, you need to use InsertHeader with
 	// a very high index.
 	//
 	// The header name must be valid. It can only contain printable ASCII characters without SP and colon.
@@ -395,7 +395,7 @@ type Modifier interface {
 	// NUL characters get converted to SP.
 	AddHeader(name, value string) error
 	// ChangeHeader replaces the header at the specified position with a new one.
-	// The index is per canonical header name and one-based. To delete a header pass an empty value.
+	// The index is per canonical header name and one-based. To delete a header, pass an empty value.
 	// If the index is bigger than there are headers with that name, then ChangeHeader will actually
 	// add a new header at the end of the header list (With the same semantic as AddHeader).
 	//
@@ -407,9 +407,9 @@ type Modifier interface {
 	// NUL characters get converted to SP.
 	ChangeHeader(index int, name, value string) error
 	// InsertHeader inserts the header at the specified position.
-	// index is one-based. The index 0 means at the very beginning.
+	// index is one-based. Index 0 means at the very beginning.
 	// If the index is bigger than the number of headers, then the header will be added at the end.
-	// Unlike ChangeHeader, index is not per canonical header name but the index in the list of all headers.
+	// Unlike ChangeHeader, the index is not per canonical header name but the index in the list of all headers.
 	//
 	// The header name must be valid. It can only contain printable ASCII characters without SP and colon.
 	//
@@ -418,8 +418,8 @@ type Modifier interface {
 	// The continuation character is not mandatory, but it is recommended to use it.
 	// NUL characters get converted to SP.
 	//
-	// Unfortunately when interacting with Sendmail the index is used to find the position
-	// in Sendmail's internal list of headers. Not all of those internal headers get send to the milter.
+	// Unfortunately, when interacting with Sendmail the index is used to find the position
+	// in Sendmail's internal list of headers. Not all of those internal headers get sent to the milter.
 	// Thus, you cannot really add a header at a specific position when the milter client is Sendmail.
 	InsertHeader(index int, name, value string) error
 	// ChangeFrom replaces the FROM envelope header with value.

@@ -74,26 +74,26 @@ const (
 	OptNoData         OptProtocol = 1 << 9  // MTA does not send the DATA start event. SMFIP_NODATA
 	OptSkip           OptProtocol = 1 << 10 // MTA supports ActSkip. SMFIP_SKIP [v6]
 	OptRcptRej        OptProtocol = 1 << 11 // Filter wants rejected RCPTs. SMFIP_RCPT_REJ [v6]
-	OptNoConnReply    OptProtocol = 1 << 12 // Milter does not send a reply to connection event. SMFIP_NR_CONN [v6]
-	OptNoHeloReply    OptProtocol = 1 << 13 // Milter does not send a reply to HELO/EHLO event. SMFIP_NR_HELO [v6]
-	OptNoMailReply    OptProtocol = 1 << 14 // Milter does not send a reply to MAIL FROM event. SMFIP_NR_MAIL [v6]
-	OptNoRcptReply    OptProtocol = 1 << 15 // Milter does not send a reply to RCPT TO event. SMFIP_NR_RCPT [v6]
-	OptNoDataReply    OptProtocol = 1 << 16 // Milter does not send a reply to DATA start event. SMFIP_NR_DATA [v6]
-	OptNoUnknownReply OptProtocol = 1 << 17 // Milter does not send a reply to unknown command event. SMFIP_NR_UNKN [v6]
-	OptNoEOHReply     OptProtocol = 1 << 18 // Milter does not send a reply to end of header event. SMFIP_NR_EOH [v6]
-	OptNoBodyReply    OptProtocol = 1 << 19 // Milter does not send a reply to body chunk event. SMFIP_NR_BODY [v6]
+	OptNoConnReply    OptProtocol = 1 << 12 // Milter does not send a reply to the connection event. SMFIP_NR_CONN [v6]
+	OptNoHeloReply    OptProtocol = 1 << 13 // Milter does not send a reply to the HELO/EHLO event. SMFIP_NR_HELO [v6]
+	OptNoMailReply    OptProtocol = 1 << 14 // Milter does not send a reply to the MAIL FROM event. SMFIP_NR_MAIL [v6]
+	OptNoRcptReply    OptProtocol = 1 << 15 // Milter does not send a reply to the RCPT TO event. SMFIP_NR_RCPT [v6]
+	OptNoDataReply    OptProtocol = 1 << 16 // Milter does not send a reply to the DATA start event. SMFIP_NR_DATA [v6]
+	OptNoUnknownReply OptProtocol = 1 << 17 // Milter does not send a reply to an unknown command event. SMFIP_NR_UNKN [v6]
+	OptNoEOHReply     OptProtocol = 1 << 18 // Milter does not send a reply to the end-of-header event. SMFIP_NR_EOH [v6]
+	OptNoBodyReply    OptProtocol = 1 << 19 // Milter does not send a reply to the body chunk event. SMFIP_NR_BODY [v6]
 
 	// OptHeaderLeadingSpace lets the [Milter] request that the MTA does not swallow a leading space
 	// when passing the header value to the milter.
 	// Sendmail by default eats one space (not tab) after the colon. So the header line (spaces replaced with _):
 	//   Subject:__Test
 	// gets transferred as HeaderName "Subject" and HeaderValue "_Test". If the milter
-	// sends OptHeaderLeadingSpace to the MTA it requests that it wants the header value as is.
+	// sends OptHeaderLeadingSpace to the MTA, it requests that it wants the header value as is.
 	// So the MTA should send HeaderName "Subject" and HeaderValue "__Test".
 	//
-	// [Milter] that do e.g. DKIM signing may need the additional space to create valid DKIM signatures.
+	// [Milter] that do e.g., DKIM signing may need the additional space to create valid DKIM signatures.
 	//
-	// The [Client] and [ClientSession] does not handle this option. It is the responsibility of the MTA to check if the milter
+	// The [Client] and [ClientSession] do not handle this option. It is the responsibility of the MTA to check if the milter
 	// asked for this and obey this request. In the simplest case just never swallow the space.
 	//
 	// SMFIP_HDR_LEADSPC [v6]

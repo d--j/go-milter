@@ -116,7 +116,7 @@ func newResponseStr(code wire.Code, data string) (*Response, error) {
 	return newResponse(code, []byte(data+"\x00")), nil
 }
 
-// RejectWithCodeAndReason stops processing and tells client the error code and reason to sent
+// RejectWithCodeAndReason stops processing and tells the client the error code and reason to send
 //
 // smtpCode must be between 400 and 599, otherwise this method will return an error.
 // See [milterutil.FormatResponse] for the rules on the reason string.
@@ -134,29 +134,29 @@ func RejectWithCodeAndReason(smtpCode uint16, reason string) (*Response, error) 
 // Define standard responses with no data
 var (
 	// RespAccept signals to the MTA that the current transaction should be accepted.
-	// No more events get send to the milter after this response.
+	// No more events get sent to the milter after this response.
 	RespAccept = &Response{code: wire.Code(wire.ActAccept)}
 
 	// RespContinue signals to the MTA that the current transaction should continue
 	RespContinue = &Response{code: wire.Code(wire.ActContinue)}
 
 	// RespDiscard signals to the MTA that the current transaction should be silently discarded.
-	// No more events get send to the milter after this response.
+	// No more events get sent to the milter after this response.
 	RespDiscard = &Response{code: wire.Code(wire.ActDiscard)}
 
 	// RespReject signals to the MTA that the current transaction should be rejected with a hard rejection.
-	// No more events get send to the milter after this response.
+	// No more events get sent to the milter after this response.
 	RespReject = &Response{code: wire.Code(wire.ActReject)}
 
 	// RespTempFail signals to the MTA that the current transaction should be rejected with a temporary error code.
 	// The sending MTA might try to deliver the same message again at a later time.
-	// No more events get send to the milter after this response.
+	// No more events get sent to the milter after this response.
 	RespTempFail = &Response{code: wire.Code(wire.ActTempFail)}
 
 	// RespSkip signals to the MTA that transaction should continue and that the MTA
-	// does not need to send more events of the same type. This response one makes sense/is possible as
-	// return value of [Milter.RcptTo], [Milter.Header] and [Milter.BodyChunk].
-	// No more events get send to the milter after this response.
+	// does not need to send more events of the same type. This response only makes sense/is possible as
+	// a return value of [Milter.RcptTo], [Milter.Header] and [Milter.BodyChunk].
+	// It can only be used with milter protocol v6 and later.
 	RespSkip = &Response{code: wire.Code(wire.ActSkip)}
 )
 

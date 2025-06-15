@@ -45,9 +45,9 @@ type Client struct {
 // send any actions supported by library.
 //
 // You generally want to use WithAction to advertise to the milter what modification options your MTA supports.
-// A value of 0 is a valid value –then your MTA only supports accepting or rejecting an SMTP transaction.
+// A value of 0 is a valid value - then your MTA only supports accepting or rejecting an SMTP transaction.
 //
-// If WithDialer is not used, a net.Dialer with 10 seconds connection timeout will be used.
+// If WithDialer is not used, a net.Dialer with a 10-second connection timeout will be used.
 // If WithMaximumVersion is not used, MaxClientProtocolVersion will be used.
 // If WithProtocol or WithProtocols is not set, it defaults to all protocol features the library can handle for the specified maximum milter version.
 // If WithOfferedMaxData is not used, DataSize64K will be used.
@@ -153,8 +153,8 @@ func (c *Client) String() string {
 //
 // The macros parameter defines the Macros this ClientSession will use to send to the milter.
 // It can be nil then this session will not send any macros to the milter.
-// Set macro values as soon as you know them (e.g. the MacroMTAFQDN macro can be set before calling Session).
-// It is your responsibility to clear command specific macros like MacroRcptMailer after
+// Set macro values as soon as you know them (e.g., the MacroMTAFQDN macro can be set before calling Session).
+// It is your responsibility to clear command-specific macros like MacroRcptMailer after
 // the command got executed (on all milters in a list of milters).
 //
 // This method is go-routine save.
@@ -248,7 +248,7 @@ func (s *ClientSession) errorOut(err error) error {
 
 // negotiate exchanges OPTNEG messages with the milter and configures this session to the negotiated values.
 func (s *ClientSession) negotiate(maximumVersion uint32, actionMask OptAction, protoMask OptProtocol, requestedMaxBuffer DataSize) error {
-	// Send our mask, get mask from milter..
+	// Send our mask, get mask from milter.
 	msg := &wire.Message{
 		Code: wire.CodeOptNeg,
 		Data: make([]byte, 4*3),
@@ -642,9 +642,9 @@ func (s *ClientSession) Rcpt(rcpt string, esmtpArgs string) (*Action, error) {
 // DataStart sends the start of the DATA command to the milter.
 // DataStart can be automatically called from Header, but you should normally call it explicitly.
 //
-// When your MTA can handle multiple milter in a chain, DataStart is the last event that is called individually for each milter in the chain.
-// After DataStart you need to call the HeaderField/Header and BodyChunk&End/BodyReadFrom calls for the whole message serially to each milter.
-// The first milter may alter the message and the next milter should receive the altered message, not the original message.
+// When your MTA can handle multiple milter in a chain, DataStart is the last event called individually for each milter in the chain.
+// After DataStart you need to execute the HeaderField/Header and BodyChunk&End/BodyReadFrom calls for the whole message serially for each milter.
+// The first milter may alter the message, and the next milter should receive the altered message, not the original message.
 func (s *ClientSession) DataStart() (*Action, error) {
 	if s.state != clientStateRcptCalled {
 		return nil, s.errorOut(fmt.Errorf("milter: in wrong state %d", s.state))
@@ -702,7 +702,7 @@ func trimLastLineBreak(in string) string {
 //
 // HeaderEnd() must be called after the last field.
 //
-// You can send macros to the milter with macros. They only get send to the milter when it wants header values and it did not send a skip response.
+// You can send macros to the milter with macros. They only get send to the milter when it wants header values, and it did not send a skip response.
 // Thus, the macros you send here should be relevant to this header only.
 func (s *ClientSession) HeaderField(key, value string, macros map[MacroName]string) (*Action, error) {
 	if s.state > clientStateHeaderFieldCalled || s.state < clientStateDataCalled {
@@ -787,7 +787,7 @@ func (s *ClientSession) HeaderEnd() (*Action, error) {
 // Header sends each field from textproto.Header followed by EOH unless
 // header messages are disabled during negotiation.
 //
-// You may call HeaderField before calling this method but since it calls HeaderEnd afterward
+// You may call HeaderField before calling this method, but since it calls HeaderEnd afterward,
 // you should call BodyChunk or BodyReadFrom.
 func (s *ClientSession) Header(hdr textproto.Header) (*Action, error) {
 	if s.state < clientStateRcptCalled || s.state > clientStateHeaderFieldCalled {
@@ -816,11 +816,11 @@ func (s *ClientSession) Header(hdr textproto.Header) (*Action, error) {
 
 // BodyChunk sends a single body chunk to the milter.
 //
-// It is callers responsibility to ensure every chunk is not bigger than
+// It is the caller's responsibility to ensure every chunk is not bigger than
 // defined in WithUsedMaxData.
 //
 // BodyChunk can be called even after the milter responded with ActSkip.
-// This method translates a ActSkip milter response into a ActContinue response
+// This method translates an ActSkip milter response into an ActContinue response,
 // but after a successful ActSkip response Skip will return true.
 func (s *ClientSession) BodyChunk(chunk []byte) (*Action, error) {
 	if s.state < clientStateHeaderEndCalled || s.state > clientStateBodyChunkCalled {
@@ -862,7 +862,7 @@ func (s *ClientSession) BodyChunk(chunk []byte) (*Action, error) {
 	return act, nil
 }
 
-// BodyReadFrom is a helper function that calls BodyChunk repeatedly to transmit entire
+// BodyReadFrom is a helper function that calls BodyChunk repeatedly to transmit the entire
 // body from io.Reader and then calls End.
 //
 // See documentation for these functions for details.
@@ -941,7 +941,7 @@ func (s *ClientSession) readModifyActs() (modifyActs []ModifyAction, act *Action
 // call. The same ClientSession can be used to check another message arrived
 // within the same SMTP connection (Helo and Conn information is preserved).
 //
-// Close should be called to conclude session.
+// Close should be called to conclude the session.
 func (s *ClientSession) End() ([]ModifyAction, *Action, error) {
 	if s.state != clientStateBodyChunkCalled {
 		return nil, nil, s.errorOut(fmt.Errorf("milter: end: in wrong state %d", s.state))
@@ -1054,7 +1054,7 @@ func (s *ClientSession) Reset(macros Macros) error {
 
 // Close releases resources associated with the session and closes the connection to the milter.
 //
-// If there is a milter sequence in progress the CodeQuit command is called to signal closure to the milter.
+// If there is a milter sequence in progress, the CodeQuit command is called to signal closure to the milter.
 //
 // You can call Close at any time in the session, and you can call Close multiple times without harm.
 func (s *ClientSession) Close() error {

@@ -47,8 +47,8 @@ const (
 	MacroAuthType          MacroName = "{auth_type}"          // The used authentication method (LOGIN, DIGEST-MD5, etc)
 	MacroAuthAuthen        MacroName = "{auth_authen}"        // The username of the authenticated user
 	MacroAuthSsf           MacroName = "{auth_ssf}"           // The key length (in bits) of the used encryption layer (TLS) – if any
-	MacroAuthAuthor        MacroName = "{auth_author}"        // The optional overwrite username for this message
-	MacroMailMailer        MacroName = "{mail_mailer}"        // the delivery agent for this MAIL FROM (e.g. esmtp, lmtp)
+	MacroAuthAuthor        MacroName = "{auth_author}"        // The optional overwritten username for this message
+	MacroMailMailer        MacroName = "{mail_mailer}"        // the delivery agent for this MAIL FROM (e.g., esmtp, lmtp)
 	MacroMailHost          MacroName = "{mail_host}"          // the domain part of the MAIL FROM address
 	MacroMailAddr          MacroName = "{mail_addr}"          // the MAIL FROM address (only the address without <>)
 	MacroRcptMailer        MacroName = "{rcpt_mailer}"        // MacroRcptMailer holds the delivery agent/next hop for the current RCPT TO address. E.g. smtp, local.
@@ -78,7 +78,7 @@ type Macros interface {
 
 // MacroBag is a default implementation of the Macros interface.
 // A MacroBag is safe for concurrent use by multiple goroutines.
-// It has special handling for the date related macros and can be copied.
+// It has special handling for the date-related macros and can be copied.
 //
 // The zero value of MacroBag is invalid. Use [NewMacroBag] to create an empty MacroBag.
 type MacroBag struct {

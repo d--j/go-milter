@@ -32,26 +32,26 @@ type Trx interface {
 	ChangeMailFrom(from string, esmtpArgs string)
 
 	// RcptTos holds the [RcptTo] recipient slice of this transaction.
-	// Your changes to Addr and/or Args values of the elements of this slice get send back to the MTA.
+	// Your changes to Addr and/or Args values of the elements of this slice get sent back to the MTA.
 	// But you should use DelRcptTo and AddRcptTo
 	//
 	// Only populated if [WithDecisionAt] is bigger than [DecisionAtMailFrom].
 	RcptTos() []*addr.RcptTo
 	// HasRcptTo returns true when rcptTo is in the list of recipients.
 	//
-	// rcptTo gets compared to the existing recipients IDNA address aware.
+	// rcptTo get compared to the existing recipients IDNA address aware.
 	HasRcptTo(rcptTo string) bool
 	// AddRcptTo adds the rcptTo (without angles) to the list of recipients with the ESMTP arguments esmtpArgs.
-	// If rcptTo is already in the list of recipients only the esmtpArgs of this recipient get updated.
+	// If rcptTo is already in the list of recipients, only the esmtpArgs of this recipient get updated.
 	//
-	// rcptTo gets compared to the existing recipients IDNA address aware.
+	// rcptTo get compared to the existing recipients IDNA address aware.
 	//
 	// When your filter should work with Sendmail you should set esmtpArgs to the empty string
 	// since Sendmail validates the provided esmtpArgs and also rejects valid values like `BODY=8BITMIME`.
 	AddRcptTo(rcptTo string, esmtpArgs string)
 	// DelRcptTo deletes the rcptTo (without angles) from the list of recipients.
 	//
-	// rcptTo gets compared to the existing recipients IDNA address aware.
+	// rcptTo get compared to the existing recipients IDNA address aware.
 	DelRcptTo(rcptTo string)
 
 	// Headers are the [Header] fields of this message.
@@ -61,7 +61,7 @@ type Trx interface {
 	Headers() header.Header
 	// HeadersEnforceOrder activates a workaround for Sendmail to ensure that the header ordering of the resulting email
 	// is exactly the same as the order in Headers. To ensure that, we delete all existing headers and add all headers
-	// as new headers. This is of course a significant overhead, so you should only call this method when you really need
+	// as new headers. This is, of course, a significant overhead, so you should only call this method when you really need
 	// to enforce a specific header order.
 	//
 	// Sendmail may re-fold your header values (newline characters you inserted might get removed).

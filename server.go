@@ -22,32 +22,32 @@ var ErrServerClosed = errors.New("milter: server closed")
 // One [Milter] will handle one MTA milter connection.
 // Normally an MTA will create one milter connection for one SMTP connection.
 // Your [Milter] implementation needs to be able to handle getting multiple messages in one connection.
-// I.e. after you send a terminating response to the MTA
+// I.e., after you send a terminating response to the MTA
 // (RespAccept, RespReject, RespDiscard, RespTempFail, RejectWithCodeAndReason) you need to be able to handle
 // getting (a) a new MailFrom command from the MTA for the next message in the same SMTP connection,
 // or (b) a call to NewConnection when the MTA re-uses the milter connection for a new SMTP connection.
 type Milter interface {
 	// NewConnection gets called when a new SMTP connection was opened.
 	// You can use this method to initialize your milter.
-	// Normally an MTA will use one milter connection only for one SMTP connection so this method will only be called
+	// Normally an MTA will use one milter connection only for one SMTP connection, so this method will only be called
 	// one time. The MTA can also re-use a milter connection for another SMTP connection (wire.CodeQuitNewConn).
 	//
 	// NewConnection might be called without ever actually calling the other
 	// methods of the [Milter] interface (Connect, Helo). Then Cleanup gets called immediately after NewConnection.
 	//
-	// You can use m to examine the milter protocol options/actions that were negotiated with the MTA.
+	// You can use m to examine the milter protocol options/actions negotiated with the MTA.
 	// If you return an error, the milter connection will break. If you want to send a response to the SMTP client
 	// from this command (including calling Modifier.Progress), you need to defer the response to
 	// the next command (Connect, Helo, MailFrom) that gets called.
 	NewConnection(m Modifier) error
 
-	// Connect is called to provide SMTP connection data for incoming message.
+	// Connect is called to provide SMTP connection data for an incoming message.
 	// Suppress with OptNoConnect.
 	//
 	// m is read-only+progress. You can call Modifier.Progress on it but no
-	// other modifier actions (e.g. Modifier.AddHeader).
+	// other modifier actions (e.g., Modifier.AddHeader).
 	//
-	// If this method returns an error the error will be logged and the connection will be closed.
+	// If this method returns an error, the error will be logged and the connection will be closed.
 	// If there is a [Response] (and we did not negotiate [OptNoConnReply]) this response will be sent before closing the connection.
 	Connect(host string, family string, port uint16, addr string, m Modifier) (*Response, error)
 
@@ -56,12 +56,12 @@ type Milter interface {
 	// name is the hostname that the STMP client provided.
 	//
 	// m is read-only+progress. You can call Modifier.Progress on it but no
-	// other modifier actions (e.g. Modifier.AddHeader).
+	// other modifier actions (e.g., Modifier.AddHeader).
 	//
 	// You can get multiple Helo calls in one connection.
 	// This normally means that the SMTP client issued a STARTTLS command.
 	//
-	// If this method returns an error the error will be logged and the connection will be closed.
+	// If this method returns an error, the error will be logged and the connection will be closed.
 	// If there is a [Response] (and we did not negotiate [OptNoHeloReply]) this response will be sent before closing the connection.
 	Helo(name string, m Modifier) (*Response, error)
 
@@ -71,9 +71,9 @@ type Milter interface {
 	// esmtpArgs are the ESMTP arguments that were passed in the MAIL FROM command.
 	//
 	// m is read-only+progress. You can call Modifier.Progress on it but no
-	// other modifier actions (e.g. Modifier.AddHeader).
+	// other modifier actions (e.g., Modifier.AddHeader).
 	//
-	// If this method returns an error the error will be logged and the connection will be closed.
+	// If this method returns an error, the error will be logged and the connection will be closed.
 	// If there is a [Response] (and we did not negotiate [OptNoMailReply]) this response will be sent before closing the connection.
 	MailFrom(from string, esmtpArgs string, m Modifier) (*Response, error)
 
@@ -84,7 +84,7 @@ type Milter interface {
 	// esmtpArgs are the ESMTP arguments that were passed in the RCPT TO command.
 	//
 	// m is read-only+progress. You can call Modifier.Progress on it but no
-	// other modifier actions (e.g. Modifier.AddHeader).
+	// other modifier actions (e.g., Modifier.AddHeader).
 	//
 	// The Response you return from this method determines the action the MTA will take for this recipient only.
 	//   - RespAccept: accept this recipient
@@ -97,7 +97,7 @@ type Milter interface {
 	//   - RespDiscard: discards the whole message/transaction for all recipients.
 	//     This is the only Response that will affect the whole message, not only this recipient.
 	//
-	// If this method returns an error the error will be logged and the connection will be closed.
+	// If this method returns an error, the error will be logged and the connection will be closed.
 	// If there is a [Response] (and we did not negotiate [OptNoRcptReply]) this response will be sent before closing the connection.
 	RcptTo(rcptTo string, esmtpArgs string, m Modifier) (*Response, error)
 
@@ -105,56 +105,56 @@ type Milter interface {
 	// Suppress with [OptNoData].
 	//
 	// m is read-only+progress. You can call Modifier.Progress on it but no
-	// other modifier actions (e.g. Modifier.AddHeader).
+	// other modifier actions (e.g., Modifier.AddHeader).
 	//
-	// If this method returns an error the error will be logged and the connection will be closed.
+	// If this method returns an error, the error will be logged and the connection will be closed.
 	// If there is a [Response] (and we did not negotiate [OptNoDataReply]) this response will be sent before closing the connection.
 	Data(m Modifier) (*Response, error)
 
-	// Header is called once for each header in incoming message. Suppress with [OptNoHeaders].
+	// Header is called once for each header in an incoming message. Suppress with [OptNoHeaders].
 	//
 	// name is the header name (without ":").
 	// value is the header value (everything after ":", without the terminating "\r\n").
 	//  Depending on OptHeaderLeadingSpace the MTA might have swallowed the first space after the colon.
 	//
 	// m is read-only+progress. You can call Modifier.Progress on it but no
-	// other modifier actions (e.g. Modifier.AddHeader).
+	// other modifier actions (e.g., Modifier.AddHeader).
 	//
 	// If you return [RespSkip] the MTA will stop sending more Header events.
 	// This response is only available in version 6 Milter protocol connections.
 	//
-	// If this method returns an error the error will be logged and the connection will be closed.
+	// If this method returns an error, the error will be logged and the connection will be closed.
 	// If there is a [Response] (and we did not negotiate [OptNoHeaderReply]) this response will be sent before closing the connection.
 	Header(name string, value string, m Modifier) (*Response, error)
 
 	// Headers gets called when all message headers have been processed. Suppress with [OptNoEOH].
 	//
 	// m is read-only+progress. You can call Modifier.Progress on it but no
-	// other modifier actions (e.g. Modifier.AddHeader).
+	// other modifier actions (e.g., Modifier.AddHeader).
 	//
-	// If this method returns an error the error will be logged and the connection will be closed.
+	// If this method returns an error, the error will be logged and the connection will be closed.
 	// If there is a [Response] (and we did not negotiate [OptNoEOHReply]) this response will be sent before closing the connection.
 	Headers(m Modifier) (*Response, error)
 
-	// BodyChunk is called to process next message body chunk data (up to 64KB
+	// BodyChunk is called to process the next message body chunk data (up to 64KB
 	// in size). Suppress with [OptNoBody].
 	//
 	// m is read-only+progress. You can call Modifier.Progress on it but no
-	// other modifier actions (e.g. Modifier.AddHeader).
+	// other modifier actions (e.g., Modifier.AddHeader).
 	//
 	// If you return [RespSkip] the MTA will stop sending more BodyChunk events.
 	// This response is only available in version 6 Milter protocol connections.
 	//
-	// If this method returns an error the error will be logged and the connection will be closed.
+	// If this method returns an error, the error will be logged and the connection will be closed.
 	// If there is a [Response] (and we did not negotiate [OptNoBodyReply]) this response will be sent before closing the connection.
 	BodyChunk(chunk []byte, m Modifier) (*Response, error)
 
 	// EndOfMessage is called at the end of each message. All changes to message's
 	// content & attributes must be done here.
 	//
-	// m is read-write. You can call modifiers (e.g. Modifier.AddHeader) and Modifier.Progress on it.
+	// m is read-write. You can call modifiers (e.g., Modifier.AddHeader) and Modifier.Progress on it.
 	//
-	// If this method returns an error the error will be logged and the connection will be closed.
+	// If this method returns an error, the error will be logged and the connection will be closed.
 	// If there is a [Response] this response will be sent before closing the connection.
 	EndOfMessage(m Modifier) (*Response, error)
 
@@ -171,7 +171,7 @@ type Milter interface {
 
 	// Unknown is called when the MTA got an unknown command in the SMTP connection.
 	//
-	// If this method returns an error the error will be logged and the connection will be closed.
+	// If this method returns an error, the error will be logged and the connection will be closed.
 	// If there is a [Response] (and we did not negotiate [OptNoUnknownReply]) this response will be sent before closing the connection.
 	Unknown(cmd string, m Modifier) (*Response, error)
 
@@ -182,8 +182,8 @@ type Milter interface {
 	Cleanup(m Modifier)
 }
 
-// NoOpMilter is a dummy [Milter] implementation that does nothing.
-// You can embed this milter in your own [Milter] implementation, when you only want/need to implement
+// NoOpMilter is a fake [Milter] implementation that does nothing.
+// You can embed this milter in your own [Milter] implementation when you only want/need to implement
 // some methods of the interface.
 type NoOpMilter struct{}
 

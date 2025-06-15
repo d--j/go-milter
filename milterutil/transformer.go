@@ -180,7 +180,7 @@ var _ transform.Transformer = (*SkipDoublePercentTransformer)(nil)
 //
 // This transformer does not handle CR LF canonicalization, but it needs src to be properly encoded in this way.
 //
-// When you combine this Transformer in a [transform.Chain] it can only handle lines with a maximum of 128 bytes.
+// When you use this Transformer in a [transform.Chain] it can only handle lines with a maximum of 128 bytes.
 type SMTPReplyTransformer struct {
 	Code    uint16
 	rfc2034 string
@@ -336,7 +336,7 @@ var _ transform.Transformer = (*SMTPReplyTransformer)(nil)
 // DefaultMaximumLineLength is the maximum line length (in bytes) that will be used by [MaximumLineLengthTransformer]
 // when its MaximumLength value is zero.
 // The SMTP protocol theoretically allows up to 1000 bytes. We default to 950 bytes since some MTAs do forceful line
-// breaks at lower limits (e.g. 980 bytes).
+// breaks at lower limits (e.g., 980 bytes).
 const DefaultMaximumLineLength = 950
 
 var errWrongMaximumLineLength = errors.New("MaximumLength must be 4 or more")
@@ -347,7 +347,7 @@ var errWrongMaximumLineLength = errors.New("MaximumLength must be 4 or more")
 //
 // This transformer can handle UTF-8 input.
 // Because of this we actually start trying to split lines at MaximumLength - 3 bytes.
-// This way we can assure that one line is never bigger than MaximumLength bytes.
+// This way we can ensure that one line is never bigger than MaximumLength bytes.
 type MaximumLineLengthTransformer struct {
 	MaximumLength uint
 	length        uint
@@ -395,7 +395,7 @@ func (t *MaximumLineLengthTransformer) Reset() {
 
 var _ transform.Transformer = (*MaximumLineLengthTransformer)(nil)
 
-// NewlineToSpaceTransformer is a [transform.Transformer] that replaces all CR LF and single CR in src to ' ' in dst.
+// NewlineToSpaceTransformer is a [transform.Transformer] that replaces all CR LF and single CR in src to SP in dst.
 // It is UTF-8 safe because UTF-8 does not allow ASCII bytes in the middle of a rune.
 type NewlineToSpaceTransformer struct {
 	prevCR bool
@@ -439,7 +439,7 @@ func (t *NewlineToSpaceTransformer) Reset() {
 
 var _ transform.Transformer = (*NewlineToSpaceTransformer)(nil)
 
-// NulToSpTransformer is a [transform.Transformer] that replaces all zero bytes to ' ' in dst.
+// NulToSpTransformer is a [transform.Transformer] that replaces all NUL bytes to SP in dst.
 // It is UTF-8 safe because UTF-8 does not allow zero bytes in the middle of a rune.
 type NulToSpTransformer struct {
 	transform.NopResetter
@@ -461,8 +461,8 @@ func (t *NulToSpTransformer) Transform(dst, src []byte, _ bool) (nDst, nSrc int,
 
 var _ transform.Transformer = (*NulToSpTransformer)(nil)
 
-// CrLfToLf is a helper that uses [CrLfToLfTransformer] to replace all line endings to only LF.
-// It also replaces NUL bytes to SP.
+// CrLfToLf is a helper that uses [CrLfToLfTransformer] to replace all line endings with only LF.
+// It also replaces NUL bytes with SP.
 //
 // postfix wants LF lines endings for header values. Using CRLF results in double CR sequences.
 func CrLfToLf(s string) string {

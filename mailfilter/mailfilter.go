@@ -15,11 +15,11 @@ import (
 // DecisionModificationFunc is the callback function that you need to implement to create a mail filter.
 //
 // ctx is a [context.Context] that might get canceled when the connection to the MTA fails while your callback is running.
-// If your decision function is running longer than one second the [MailFilter] automatically sends progress notifications
+// If your decision function is running longer than one second, the [MailFilter] automatically sends progress notifications
 // every second so that MTA does not time out the milter connection.
 //
 // trx is the [Trx] object that you can inspect to see what the [MailFilter] got as information about the current SMTP transaction.
-// You can also use trx to modify the transaction (e.g. change recipients, alter headers).
+// You can also use trx to modify the transaction (e.g., change recipients, alter headers).
 //
 // decision is your [Decision] about this SMTP transaction. Use [Accept], [TempFail], [Reject], [Discard], [QuarantineResponse], or [CustomErrorResponse].
 //
@@ -47,7 +47,7 @@ type RcptToValidationInput struct {
 // If the function returns anything other than Accept, the address is rejected.
 // Returning QuarantineResponse is an error. It will silently be treated as Accept.
 // Returning Discard will discard (silently ignore) the whole message. Your decision function will not be called in this case.
-// The function get passed in a context.Context, it might get canceled when the connection to the MTA fails while your callback is running.
+// The function gets passed in a context.Context, it might get canceled when the connection to the MTA fails while your callback is running.
 type RcptToValidator func(ctx context.Context, in *RcptToValidationInput) (Decision, error)
 
 type MailFilter struct {

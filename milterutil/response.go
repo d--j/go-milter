@@ -16,7 +16,7 @@ const MaxResponseSize = 64*1024*1024 - 2
 // smtpCode must be between 100 and 599, otherwise this function returns an error.
 // reason is the human-readable reason for the response (UTF-8 encoded). It can start with an RFC 2034 Enhanced Error Code.
 // The response is formatted as a multi-line response when (a) the reason already contains new-lines, or (b) the lines would get longer than 950 bytes.
-// "\n" line endings in reason get canonicalized to "\r\n". NUL bytes get with SP. "%" in reason get replaced with "%%".
+// "\n" line endings in reason get canonicalized to "\r\n". A NUL byte gets replaced with SP. "%" in reason gets replaced with "%%".
 // This function returns an error when the resulting SMTP text has a length of more than [DataSize64K] - 1 (65534 bytes).
 //
 // Some examples:

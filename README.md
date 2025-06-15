@@ -43,7 +43,10 @@ import (
   "context"
   "flag"
   "log"
+  "os"
+  "os/signal"
   "strings"
+  "syscall"
   "time"
 
   "github.com/d--j/go-milter/mailfilter"
@@ -57,13 +60,13 @@ func main() {
   flag.Parse()
 
   // create and start the mail filter
-  mailFilter, err := mailfilter.New(protocol, address,
+  filter, err := mailfilter.New(protocol, address,
     func(_ context.Context, trx mailfilter.Trx) (mailfilter.Decision, error) {
       // Quarantine mail when it is addressed to our SPAM trap
       if trx.HasRcptTo("spam-trap@スパム.example.com") {
         return mailfilter.QuarantineResponse("train as spam"), nil
       }
-      // Prefix subject with [⚠️EXTERNAL] when user is not logged in
+      // Prefix Subject with [⚠️EXTERNAL] when the user is not logged in
       if trx.MailFrom().AuthenticatedUser() == "" {
         subject, _ := trx.Headers().Subject()
         if !strings.HasPrefix(subject, "[⚠️EXTERNAL] ") {
@@ -80,16 +83,26 @@ func main() {
       }
       return mailfilter.Accept, nil
     }),
-    // optimization: call the decision function when all headers were sent to us
+    // Optimization: call the decision function when all headers were sent to us. Modifications get automatically deferred to EndOfHeaders.
     mailfilter.WithDecisionAt(mailfilter.DecisionAtEndOfHeaders),
   )
   if err != nil {
-    log.Fatal(err)
+    log.Println(err)
   }
-  log.Printf("Started milter on %s:%s", mailFilter.Addr().Network(), mailFilter.Addr().String())
+  log.Printf("Started milter on %s:%s", filter.Addr().Network(), filter.Addr().String())
 
+  // wait for SIGINT or SIGTERM
+  sig := make(chan os.Signal, 1)
+  signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+  go func() {
+    <-sig
+    log.Printf("Gracefully shutting down milter…")
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+    filter.Shutdown(ctx)
+  }()
   // wait for the mail filter to end
-  mailFilter.Wait()
+  filter.Wait()
 }
 ```
 

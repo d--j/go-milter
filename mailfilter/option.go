@@ -14,7 +14,7 @@ type Option func(opt *options)
 type DecisionAt int
 
 const (
-	// The DecisionAtConnect constant makes the mail filter call the decision function after the connect event.
+	// The DecisionAtConnect constant makes the mail filter call the decision function after the connected event.
 	DecisionAtConnect DecisionAt = iota
 
 	// The DecisionAtHelo constant makes the mail filter call the decision function after the HELO/EHLO event.
@@ -36,7 +36,7 @@ const (
 
 // WithDecisionAt sets the decision point for the [MailFilter].
 // The default is [DecisionAtEndOfMessage].
-// If your decision function also made modifications to the Trx (e.g. added a recipient),
+// If your decision function also made modifications to the Trx (e.g., added a recipient),
 // the Mailfilter will automatically delay sending your decision to the MTA
 // until [milter.Milter.EndOfMessage] gets called (after the DATA command finished).
 func WithDecisionAt(decisionAt DecisionAt) Option {
@@ -48,7 +48,7 @@ func WithDecisionAt(decisionAt DecisionAt) Option {
 type ErrorHandling int
 
 const (
-	// Error just throws the error. The connection to the MTA will break and the MTA will decide what happens to the SMTP transaction.
+	// Error just throws the error. The connection to the MTA will break, and the MTA will decide what happens to the SMTP transaction.
 	Error ErrorHandling = iota
 	// AcceptWhenError accepts the transaction despite the error (it gets logged).
 	AcceptWhenError
@@ -128,9 +128,9 @@ func WithBody(maxMem int, maxSize int64, maxAction MaxAction) Option {
 	}
 }
 
-// WithRcptToValidator set a custom validator function, that can be used to reject individual RCPT TO addresses.
+// WithRcptToValidator set a custom validator function that can be used to reject individual RCPT TO addresses.
 // If you do not set this, all recipient addresses will be accepted.
-// Your decision function can of course always remove recipients from the transaction (without notifying the SMTP client).
+// Your decision function can, of course, always remove recipients from the transaction (without notifying the SMTP client).
 func WithRcptToValidator(validator RcptToValidator) Option {
 	return func(opt *options) {
 		opt.rcptToValidator = validator

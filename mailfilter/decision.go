@@ -16,7 +16,7 @@ type Decision interface {
 	Equal(Decision) bool
 }
 
-// decision is a string backed Decision implementation that gets translated to the default milter responses
+// decision is a string-backed Decision implementation that gets translated to the default milter responses
 // milter.RespAccept, milter.RespReject, milter.RespTempFail, milter.RespDiscard.
 type decision string
 

@@ -31,8 +31,8 @@ func (m *MTA) IsSendmail() bool {
 type Connect struct {
 	Host   string // The host name the MTA figured out for the remote client.
 	Family string // "unknown", "unix", "tcp4" or "tcp6"
-	Port   uint16 // If Family is "tcp4" or "tcp6" the remote port of client connecting to the MTA
-	Addr   string // If Family "unix" the path to the unix socket. If "tcp4" or "tcp6" the IPv4 or IPv6 address of the remote client connecting to the MTA
+	Port   uint16 // If Family is "tcp4" or "tcp6", the remote TCP port of the client connecting to the MTA
+	Addr   string // If Family "unix", the path to the unix socket. If "tcp4" or "tcp6", the IPv4 or IPv6 address of the remote client connecting to the MTA
 	IfName string // The Name of the network interface the MTA connection was accepted at. Might be empty.
 	IfAddr string // The IP address of the network interface the MTA connection was accepted at. Might be empty.
 }
@@ -40,10 +40,10 @@ type Connect struct {
 type Helo struct {
 	Name        string // The HELO/EHLO hostname the client provided
 	TlsVersion  string // TLSv1.3, TLSv1.2, ... or empty when no STARTTLS was used. Might even be empty when STARTTLS was used (when the MTA does not support the corresponding macro – almost all do).
-	Cipher      string // The Cipher that client and MTA negotiated.
-	CipherBits  string // The bits of the cipher used. E.g. 256. Might be "RSA equivalent" bits for e.g. elliptic curve ciphers.
-	CertSubject string // If MutualTLS was used for the connection between client and MTA this holds the subject of the validated client certificate.
-	CertIssuer  string // If MutualTLS was used for the connection between client and MTA this holds the subject of the issuer of the client certificate (CA or Sub-CA).
+	Cipher      string // The Cipher that the client and MTA negotiated.
+	CipherBits  string // The bits of the cipher used. E.g., 256. Might be "RSA equivalent" bits for e.g., elliptic curve ciphers.
+	CertSubject string // If MutualTLS was used for the connection between the client and MTA, this holds the subject of the validated client certificate.
+	CertIssuer  string // If MutualTLS was used for the connection between the client and MTA, this holds the subject of the issuer of the client certificate (CA or Sub-CA).
 }
 
 // transaction can be used to examine the data of the current mail transaction and
@@ -133,7 +133,7 @@ func (t *transaction) makeDecision(ctx context.Context, decide DecisionModificat
 	t.decisionErr = err
 }
 
-// hasModifications checks quickly if there are any modifications - it does not actually compute them
+// hasModifications checks quickly if there are any modifications - it does not compute them
 func (t *transaction) hasModifications() bool {
 	if !t.hasDecision {
 		return false
@@ -212,10 +212,10 @@ func (t *transaction) sendModifications(m milter.Modifier) error {
 		}
 	}
 	for _, op := range addOps {
-		// Sendmail has headers in its envelop headers list that it does not send to the milter.
+		// Sendmail has headers in its envelope headers list that it does not send to the milter.
 		// But they *do* count to the insert index?! So for sendmail we cannot really add a header at a specific position.
 		// (Other than beginning, that is index 0).
-		// We add the arbitrary number 100 to the index so that we skip any and all "hidden" sendmail headers when we
+		// We add the arbitrary number 100 to the index so that we skip any "hidden" sendmail headers when we
 		// want to insert at the end of the header list.
 		// We do not use m.AddHeader since that also is not guaranteed to add the header at the end…
 		if err := m.InsertHeader(op.Index+len(changeInsertOps)+100, op.Name, op.Value); err != nil {
