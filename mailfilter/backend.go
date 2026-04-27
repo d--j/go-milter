@@ -275,9 +275,9 @@ func (b *backend) BodyChunk(chunk []byte, m milter.Modifier) (*milter.Response, 
 
 func (b *backend) readyForNewMessage() {
 	if b.transaction != nil {
-		connect, helo := b.transaction.connect, b.transaction.helo
+		mta, connect, helo := b.transaction.mta, b.transaction.connect, b.transaction.helo
 		b.Cleanup(nil)
-		b.transaction.connect, b.transaction.helo = connect, helo
+		b.transaction.mta, b.transaction.connect, b.transaction.helo = mta, connect, helo
 	} else {
 		b.Cleanup(nil)
 	}
