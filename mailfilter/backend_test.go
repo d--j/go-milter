@@ -816,3 +816,30 @@ func Test_backend_makeDecision(t *testing.T) {
 		}
 	})
 }
+
+func Test_backend_readyForNewMessage(t *testing.T) {
+	t.Parallel()
+	b, _ := newMockBackend()
+	trx := transaction{mta: MTA{FQDN: "mta-fqdn"}, connect: Connect{Host: "host"}, helo: Helo{Name: "name"}}
+	b.transaction = &trx
+	fqdn := b.transaction.MTA().FQDN
+	host := b.transaction.Connect().Host
+	name := b.transaction.Helo().Name
+	if fqdn == "" || host == "" || name == "" {
+		t.Fatal("fqdn, name, or host not set")
+	}
+	b.headerCount = 10
+	b.readyForNewMessage()
+	if b.transaction == nil {
+		t.Fatal("transaction is nil")
+	}
+	if b.transaction == &trx {
+		t.Fatal("transaction not reset")
+	}
+	if b.headerCount != 0 {
+		t.Fatal("headerCount not reset")
+	}
+	if b.transaction.MTA().FQDN != fqdn || b.transaction.Connect().Host != host || b.transaction.Helo().Name != name {
+		t.Fatal("MTA, Connect, Helo not preserved")
+	}
+}

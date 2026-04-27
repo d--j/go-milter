@@ -1,0 +1,6 @@
+# accept first
+DECISION ACCEPT
+FROM <from@example.com> *
+# accept second
+DECISION ACCEPT
+FROM <from@example.com> *
