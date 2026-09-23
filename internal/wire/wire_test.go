@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"reflect"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -34,6 +35,9 @@ func TestReadPacket(t *testing.T) {
 		{"Timeout2", args{packets{{[]byte{}, 2 * time.Second}, {[]byte{0, 0, 0, 1, 'b'}, 0}}, time.Second}, nil, true},
 		{"With Data", args{packets{{[]byte{0, 0, 0, 4, 't', 'e', 's', 't'}, 0}}, time.Second}, &Message{Code: 't', Data: []byte{'e', 's', 't'}}, false},
 		{"Zero length", args{packets{{[]byte{0, 0, 0, 0}, 0}}, time.Second}, nil, true},
+		{"Too big", args{packets{{[]byte{0x20, 0, 0, 1}, 0}}, time.Second}, nil, true},
+		{"Short read", args{packets{{[]byte{0, 0, 0, 4, 't', 'e'}, 0}}, time.Second}, nil, true},
+		{"Larger than initial buffer", args{packets{{[]byte{0, 2, 0, 0}, 0}, {bytes.Repeat([]byte{'x'}, 128*1024), 0}}, time.Second}, &Message{Code: 'x', Data: bytes.Repeat([]byte{'x'}, 128*1024-1)}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -224,5 +228,92 @@ func TestMessage_MacroCode(t *testing.T) {
 				t.Errorf("MacroCode() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestReadPacket_NoUpfrontAllocation(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	go func() {
+		// announce the maximum packet size but never send the data
+		_, _ = server.Write([]byte{0x20, 0, 0, 0})
+		_ = server.Close()
+	}()
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	_, err := ReadPacket(client, time.Second)
+	runtime.ReadMemStats(&after)
+	if err == nil {
+		t.Fatal("ReadPacket() expected an error for truncated packet")
+	}
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > 4*initialReadBufferSize {
+		t.Errorf("ReadPacket() allocated %d bytes for a packet that never arrived", allocated)
+	}
+}
+
+func TestReadPacket_BufferMatchesLength(t *testing.T) {
+	for _, length := range []int{1, 1000, initialReadBufferSize, initialReadBufferSize + 1, 1024 * 1024} {
+		t.Run(fmt.Sprint(length), func(t *testing.T) {
+			client, server := net.Pipe()
+			defer client.Close()
+			go func() {
+				_, _ = server.Write([]byte{byte(length >> 24), byte(length >> 16), byte(length >> 8), byte(length)})
+				_, _ = server.Write(bytes.Repeat([]byte{'B'}, length))
+				_ = server.Close()
+			}()
+			msg, err := ReadPacket(client, time.Second)
+			if err != nil {
+				t.Fatalf("ReadPacket() error = %v", err)
+			}
+			if len(msg.Data) != length-1 || cap(msg.Data) != length-1 {
+				t.Errorf("ReadPacket() len(Data) = %d, cap(Data) = %d, want %d", len(msg.Data), cap(msg.Data), length-1)
+			}
+		})
+	}
+}
+
+func TestReadPacket_Truncated(t *testing.T) {
+	tests := []struct {
+		name    string
+		data    []byte
+		wantErr error
+	}{
+		{"no payload", []byte{0, 0, 0, 4}, io.EOF},
+		{"partial payload", []byte{0, 0, 0, 4, 't', 'e'}, io.ErrUnexpectedEOF},
+		{"partial payload after growing", append([]byte{0, 2, 0, 0}, bytes.Repeat([]byte{'x'}, initialReadBufferSize+1)...), io.ErrUnexpectedEOF},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, server := net.Pipe()
+			defer client.Close()
+			go func() {
+				_, _ = server.Write(tt.data)
+				_ = server.Close()
+			}()
+			_, err := ReadPacket(client, time.Second)
+			if err != tt.wantErr {
+				t.Errorf("ReadPacket() error = %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestReadPacket_Consecutive(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	big := bytes.Repeat([]byte{'b'}, 3*initialReadBufferSize)
+	go func() {
+		_, _ = server.Write(append([]byte{0, 3, 0, 0}, big...))
+		_, _ = server.Write([]byte{0, 0, 0, 2, 'x', 'y'})
+		_ = server.Close()
+	}()
+	first, err := ReadPacket(client, time.Second)
+	if err != nil || first.Code != 'b' || !bytes.Equal(first.Data, big[1:]) {
+		t.Fatalf("ReadPacket() first = %v, %v", first, err)
+	}
+	second, err := ReadPacket(client, time.Second)
+	if err != nil || second.Code != 'x' || !bytes.Equal(second.Data, []byte{'y'}) {
+		t.Fatalf("ReadPacket() second = %+v, %v", second, err)
 	}
 }
