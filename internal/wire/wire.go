@@ -91,6 +91,10 @@ func ReadPacket(conn net.Conn, timeout time.Duration) (*Message, error) {
 		return nil, err
 	}
 
+	if length == 0 {
+		// every packet has at least the one byte command code
+		return nil, errors.New("milter: reject to read packet with length 0")
+	}
 	if length > maxPacketSize {
 		return nil, fmt.Errorf("milter: reject to read %d bytes in one message", length)
 	}

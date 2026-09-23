@@ -33,6 +33,7 @@ func TestReadPacket(t *testing.T) {
 		{"Timeout", args{packets{{[]byte{0, 0, 0, 1}, 2 * time.Second}, {[]byte("b"), 0}}, time.Second}, nil, true},
 		{"Timeout2", args{packets{{[]byte{}, 2 * time.Second}, {[]byte{0, 0, 0, 1, 'b'}, 0}}, time.Second}, nil, true},
 		{"With Data", args{packets{{[]byte{0, 0, 0, 4, 't', 'e', 's', 't'}, 0}}, time.Second}, &Message{Code: 't', Data: []byte{'e', 's', 't'}}, false},
+		{"Zero length", args{packets{{[]byte{0, 0, 0, 0}, 0}}, time.Second}, nil, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
