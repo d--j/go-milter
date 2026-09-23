@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/d--j/go-milter/internal/body"
-	"github.com/d--j/go-milter/internal/header"
 	"strings"
 	"time"
+
+	"github.com/d--j/go-milter/internal/body"
+	"github.com/d--j/go-milter/internal/header"
 
 	"github.com/d--j/go-milter"
 	"github.com/d--j/go-milter/mailfilter/addr"
@@ -62,14 +63,24 @@ func (b *backend) makeDecision(m milter.Modifier) {
 	defer ticker.Stop()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
+	var panicVal any
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				panicVal = r
+			}
+			done <- struct{}{}
+		}()
 		b.transaction.makeDecision(ctx, b.decision)
-		done <- struct{}{}
 	}()
 	for {
 		select {
 		case <-done:
 			cancel()
+			// re-panic in this go-routine will surface it in the milter server
+			if panicVal != nil {
+				panic(panicVal)
+			}
 			return
 		case <-ticker.C:
 			err := m.Progress()
@@ -78,7 +89,10 @@ func (b *backend) makeDecision(m milter.Modifier) {
 				cancel()
 				// wait for decision function
 				<-done
-				// if there was no error in the decision function (e.g. it did not actually check ctx.Done())
+				if panicVal != nil {
+					panic(panicVal)
+				}
+				// if there was no error in the decision function (e.g., it did not actually check ctx.Done())
 				// set the Progress error so that we will not actually think we should continue
 				if b.transaction.decisionErr == nil {
 					b.transaction.decisionErr = err

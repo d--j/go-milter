@@ -599,6 +599,10 @@ func Test_milterSession_processMsg(t *testing.T) {
 		{"macro err", fields{
 			backend: def,
 		}, &wire.Message{wire.CodeMacro, []byte{}}, nil, true},
+		{"conn hostname not terminated", fields{backend: def}, &wire.Message{wire.CodeConn, []byte{'h'}}, nil, true},
+		{"conn missing family", fields{backend: def}, &wire.Message{wire.CodeConn, []byte{'h', 0}}, nil, true},
+		{"mail not terminated", fields{backend: def}, &wire.Message{wire.CodeMail, []byte{'<', 'a', '>'}}, nil, true},
+		{"rcpt not terminated", fields{backend: def}, &wire.Message{wire.CodeRcpt, []byte{'<', 'a', '>'}}, nil, true},
 	}
 	for _, tt_ := range tests {
 		t.Run(tt_.name, func(t *testing.T) {

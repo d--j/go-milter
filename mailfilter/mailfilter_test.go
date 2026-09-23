@@ -1,13 +1,17 @@
 package mailfilter
 
 import (
+	"bytes"
 	"context"
-	"github.com/d--j/go-milter"
+	"fmt"
 	"math"
 	"net"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/d--j/go-milter"
 )
 
 type testListener struct {
@@ -329,5 +333,114 @@ func TestNew(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestMailFilter_DecisionPanic(t *testing.T) {
+	shouldPanic := true
+	warningChan := make(chan string, 10)
+	origLogWarning := milter.LogWarning
+	milter.LogWarning = func(format string, v ...any) {
+		warningChan <- fmt.Sprintf(format, v...)
+	}
+	defer func() {
+		milter.LogWarning = origLogWarning
+	}()
+
+	filter, err := New("tcp", "127.0.0.1:0", func(ctx context.Context, trx Trx) (Decision, error) {
+		if shouldPanic {
+			panic("panic in decision")
+		}
+		return Accept, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer filter.Close()
+
+	client := milter.NewClient("tcp", filter.Addr().String())
+
+	// First session panics in decision
+	session, err := client.Session(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = func() error {
+		if _, err := session.Conn("localhost", milter.FamilyInet, 2525, "127.0.0.1"); err != nil {
+			return err
+		}
+		if _, err := session.Helo("localhost"); err != nil {
+			return err
+		}
+		if _, err := session.Mail("sender@example.com", ""); err != nil {
+			return err
+		}
+		if _, err := session.Rcpt("rcpt@example.com", ""); err != nil {
+			return err
+		}
+		if _, err := session.DataStart(); err != nil {
+			return err
+		}
+		if _, err := session.HeaderField("Subject", "Test", nil); err != nil {
+			return err
+		}
+		if _, err := session.HeaderEnd(); err != nil {
+			return err
+		}
+		if _, _, err := session.BodyReadFrom(bytes.NewReader([]byte("test\n"))); err != nil {
+			return err
+		}
+		return session.Close()
+	}()
+
+	var warningMsg string
+	select {
+	case warningMsg = <-warningChan:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for panic warning log")
+	}
+
+	if !strings.Contains(warningMsg, "panic in milter session") {
+		t.Fatalf("expected panic warning log, got %q", warningMsg)
+	}
+
+	// Second session on same server succeeds
+	shouldPanic = false
+	session2, err := client.Session(nil)
+	if err != nil {
+		t.Fatalf("session2 connect failed: %v", err)
+	}
+	if _, err := session2.Conn("localhost", milter.FamilyInet, 2525, "127.0.0.1"); err != nil {
+		t.Fatalf("session2 Conn failed: %v", err)
+	}
+	if _, err := session2.Helo("localhost"); err != nil {
+		t.Fatalf("session2 Helo failed: %v", err)
+	}
+	if _, err := session2.Mail("sender@example.com", ""); err != nil {
+		t.Fatalf("session2 Mail failed: %v", err)
+	}
+	if _, err := session2.Rcpt("rcpt@example.com", ""); err != nil {
+		t.Fatalf("session2 Rcpt failed: %v", err)
+	}
+	if _, err := session2.DataStart(); err != nil {
+		t.Fatalf("session2 DataStart failed: %v", err)
+	}
+	if _, err := session2.HeaderField("Subject", "Test", nil); err != nil {
+		t.Fatalf("session2 HeaderField failed: %v", err)
+	}
+	if _, err := session2.HeaderEnd(); err != nil {
+		t.Fatalf("session2 HeaderEnd failed: %v", err)
+	}
+	if _, _, err := session2.BodyReadFrom(bytes.NewReader([]byte("test\n"))); err != nil {
+		t.Fatalf("session2 BodyReadFrom failed: %v", err)
+	}
+	if err := session2.Close(); err != nil {
+		t.Fatalf("session2 Close failed: %v", err)
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := filter.Shutdown(shutdownCtx); err != nil {
+		t.Fatalf("filter.Shutdown failed: %v", err)
 	}
 }

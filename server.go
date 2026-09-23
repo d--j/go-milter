@@ -341,9 +341,14 @@ func (s *Server) Serve(ln net.Listener) error {
 				_ = conn.Close()
 				return
 			}
+			defer s.trackSession(&session, false)
+			defer func() {
+				if r := recover(); r != nil {
+					LogWarning("panic in milter session: %v", r)
+				}
+			}()
 			session.init(s, conn, s.options.maxVersion, s.options.actions, s.options.protocol)
 			session.HandleMilterCommands()
-			s.trackSession(&session, false)
 		}(conn)
 	}
 }

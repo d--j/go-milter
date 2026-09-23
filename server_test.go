@@ -3,8 +3,10 @@ package milter
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -346,5 +348,225 @@ func TestServer_MilterCount(t *testing.T) {
 	s.milterCount.Store(1)
 	if got := s.MilterCount(); got != 1 {
 		t.Errorf("MilterCount() = %d, want %d", got, 1)
+	}
+}
+
+type stagePanicMilter struct {
+	NoOpMilter
+	panicAt string
+}
+
+func (m *stagePanicMilter) NewConnection(mod Modifier) error {
+	if m.panicAt == "NewConnection" {
+		panic("panic in NewConnection")
+	}
+	return nil
+}
+
+func (m *stagePanicMilter) Connect(host string, family string, port uint16, addr string, mod Modifier) (*Response, error) {
+	if m.panicAt == "Connect" {
+		panic("panic in Connect")
+	}
+	return RespContinue, nil
+}
+
+func (m *stagePanicMilter) Helo(name string, mod Modifier) (*Response, error) {
+	if m.panicAt == "Helo" {
+		panic("panic in Helo")
+	}
+	return RespContinue, nil
+}
+
+func (m *stagePanicMilter) MailFrom(from string, esmtpArgs string, mod Modifier) (*Response, error) {
+	if m.panicAt == "MailFrom" {
+		panic("panic in MailFrom")
+	}
+	return RespContinue, nil
+}
+
+func (m *stagePanicMilter) RcptTo(rcptTo string, esmtpArgs string, mod Modifier) (*Response, error) {
+	if m.panicAt == "RcptTo" {
+		panic("panic in RcptTo")
+	}
+	return RespContinue, nil
+}
+
+func (m *stagePanicMilter) Header(name string, value string, mod Modifier) (*Response, error) {
+	if m.panicAt == "Header" {
+		panic("panic in Header")
+	}
+	return RespContinue, nil
+}
+
+func (m *stagePanicMilter) Headers(mod Modifier) (*Response, error) {
+	if m.panicAt == "Headers" {
+		panic("panic in Headers")
+	}
+	return RespContinue, nil
+}
+
+func (m *stagePanicMilter) BodyChunk(chunk []byte, mod Modifier) (*Response, error) {
+	if m.panicAt == "BodyChunk" {
+		panic("panic in BodyChunk")
+	}
+	return RespContinue, nil
+}
+
+func (m *stagePanicMilter) EndOfMessage(mod Modifier) (*Response, error) {
+	if m.panicAt == "EndOfMessage" {
+		panic("panic in EndOfMessage")
+	}
+	return RespAccept, nil
+}
+
+func (m *stagePanicMilter) Abort(mod Modifier) error {
+	if m.panicAt == "Abort" {
+		panic("panic in Abort")
+	}
+	return nil
+}
+
+func (m *stagePanicMilter) Cleanup(mod Modifier) {
+	if m.panicAt == "Cleanup" {
+		panic("panic in Cleanup")
+	}
+}
+
+func TestServer_PanicRecovery(t *testing.T) {
+	stages := []string{
+		"newMilter",
+		"NewConnection",
+		"Connect",
+		"Helo",
+		"MailFrom",
+		"RcptTo",
+		"Header",
+		"Headers",
+		"BodyChunk",
+		"EndOfMessage",
+		"Abort",
+		"Cleanup",
+	}
+
+	for _, stage := range stages {
+		t.Run(stage, func(t *testing.T) {
+			currentPanic := stage
+			warningChan := make(chan string, 10)
+			origLogWarning := LogWarning
+			LogWarning = func(format string, v ...any) {
+				warningChan <- fmt.Sprintf(format, v...)
+			}
+			defer func() {
+				LogWarning = origLogWarning
+			}()
+
+			ln, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ln.Close()
+
+			server := NewServer(
+				WithDynamicMilter(func(version uint32, action OptAction, protocol OptProtocol, maxData DataSize) Milter {
+					if currentPanic == "newMilter" {
+						panic("panic in newMilter")
+					}
+					return &stagePanicMilter{panicAt: currentPanic}
+				}),
+			)
+
+			go func() {
+				_ = server.Serve(ln)
+			}()
+			defer server.Close()
+
+			client := NewClient("tcp", ln.Addr().String())
+			session, err := client.Session(nil)
+			if err == nil {
+				runSession := func() error {
+					if _, err := session.Conn("localhost", FamilyInet, 2525, "127.0.0.1"); err != nil {
+						return err
+					}
+					if _, err := session.Helo("localhost"); err != nil {
+						return err
+					}
+					if _, err := session.Mail("sender@example.com", ""); err != nil {
+						return err
+					}
+					if _, err := session.Rcpt("rcpt@example.com", ""); err != nil {
+						return err
+					}
+					if stage == "Abort" {
+						return session.Abort(nil)
+					}
+					if _, err := session.DataStart(); err != nil {
+						return err
+					}
+					if _, err := session.HeaderField("Subject", "Test", nil); err != nil {
+						return err
+					}
+					if _, err := session.HeaderEnd(); err != nil {
+						return err
+					}
+					if _, _, err := session.BodyReadFrom(bytes.NewReader([]byte("test\n"))); err != nil {
+						return err
+					}
+					return session.Close()
+				}
+				_ = runSession()
+			}
+
+			var warningMsg string
+			select {
+			case warningMsg = <-warningChan:
+			case <-time.After(2 * time.Second):
+				t.Fatalf("timed out waiting for panic warning log")
+			}
+
+			if !strings.Contains(warningMsg, "panic in milter session") {
+				t.Fatalf("expected panic warning log, got %q", warningMsg)
+			}
+
+			// Verify server is still functional: new session succeeds
+			currentPanic = ""
+			session2, err := client.Session(nil)
+			if err != nil {
+				t.Fatalf("new session after panic failed to connect: %v", err)
+			}
+			if _, err := session2.Conn("localhost", FamilyInet, 2525, "127.0.0.1"); err != nil {
+				t.Fatalf("session2 Conn failed: %v", err)
+			}
+			if _, err := session2.Helo("localhost"); err != nil {
+				t.Fatalf("session2 Helo failed: %v", err)
+			}
+			if _, err := session2.Mail("sender@example.com", ""); err != nil {
+				t.Fatalf("session2 Mail failed: %v", err)
+			}
+			if _, err := session2.Rcpt("rcpt@example.com", ""); err != nil {
+				t.Fatalf("session2 Rcpt failed: %v", err)
+			}
+			if _, err := session2.DataStart(); err != nil {
+				t.Fatalf("session2 DataStart failed: %v", err)
+			}
+			if _, err := session2.HeaderField("Subject", "Test", nil); err != nil {
+				t.Fatalf("session2 HeaderField failed: %v", err)
+			}
+			if _, err := session2.HeaderEnd(); err != nil {
+				t.Fatalf("session2 HeaderEnd failed: %v", err)
+			}
+			if _, _, err := session2.BodyReadFrom(bytes.NewReader([]byte("test\n"))); err != nil {
+				t.Fatalf("session2 BodyReadFrom failed: %v", err)
+			}
+			if err := session2.Close(); err != nil {
+				t.Fatalf("session2 Close failed: %v", err)
+			}
+
+			// Verify shutdown succeeds gracefully
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			if err := server.Shutdown(ctx); err != nil {
+				t.Fatalf("server.Shutdown failed after recovered panic: %v", err)
+			}
+		})
 	}
 }

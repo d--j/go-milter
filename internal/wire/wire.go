@@ -77,6 +77,11 @@ const (
 // We reject reading/writing messages larger than 512 MB outright.
 const maxPacketSize = 512 * 1024 * 1024
 
+// initialReadBufferSize is the amount of memory ReadPacket reserves upfront.
+// The buffer grows as data actually arrives, so a peer cannot make us allocate
+// maxPacketSize bytes by sending nothing more than a 4-byte length header.
+const initialReadBufferSize = 64 * 1024
+
 func ReadPacket(conn net.Conn, timeout time.Duration) (*Message, error) {
 	if timeout != 0 {
 		_ = conn.SetReadDeadline(time.Now().Add(timeout))
@@ -91,14 +96,32 @@ func ReadPacket(conn net.Conn, timeout time.Duration) (*Message, error) {
 		return nil, err
 	}
 
+	if length == 0 {
+		// every packet has at least the one byte command code
+		return nil, errors.New("milter: reject to read packet with length 0")
+	}
 	if length > maxPacketSize {
 		return nil, fmt.Errorf("milter: reject to read %d bytes in one message", length)
 	}
 
-	// read packet data
-	data := make([]byte, length)
-	if _, err := io.ReadFull(conn, data); err != nil {
-		return nil, err
+	// read packet data, doubling the buffer (capped at length) only when it is full
+	data := make([]byte, min(length, initialReadBufferSize))
+	read := 0
+	for {
+		n, err := io.ReadFull(conn, data[read:])
+		read += n
+		if err != nil {
+			if err == io.EOF && read > 0 {
+				err = io.ErrUnexpectedEOF
+			}
+			return nil, err
+		}
+		if read == int(length) {
+			break
+		}
+		grown := make([]byte, read+min(int(length)-read, read))
+		copy(grown, data)
+		data = grown
 	}
 
 	// prepare response data

@@ -156,6 +156,10 @@ func (m *serverSession) processMsg(backend Milter, msg *wire.Message) (*Response
 		}
 		m.macros.DelStageAndAbove(StageHelo)
 		hostname := wire.ReadCString(msg.Data)
+		// hostname needs its NUL terminator and must be followed by the protocol family
+		if len(hostname)+1 >= len(msg.Data) {
+			return nil, fmt.Errorf("milter: conn: unexpected data size: %d", len(msg.Data))
+		}
 		msg.Data = msg.Data[len(hostname)+1:]
 		// get protocol family
 		protocolFamily := msg.Data[0]
@@ -222,6 +226,9 @@ func (m *serverSession) processMsg(backend Milter, msg *wire.Message) (*Response
 		}
 		m.macros.DelStageAndAbove(StageRcpt)
 		from := wire.ReadCString(msg.Data)
+		if len(from) == len(msg.Data) {
+			return nil, fmt.Errorf("milter: mail: missing NUL terminator")
+		}
 		data := msg.Data[len(from)+1:]
 
 		// the rest of the data are ESMTP arguments, separated by a zero byte.
@@ -235,6 +242,9 @@ func (m *serverSession) processMsg(backend Milter, msg *wire.Message) (*Response
 		}
 		m.macros.DelStageAndAbove(StageData)
 		to := wire.ReadCString(msg.Data)
+		if len(to) == len(msg.Data) {
+			return nil, fmt.Errorf("milter: rcpt: missing NUL terminator")
+		}
 		rest := msg.Data[len(to)+1:]
 
 		// the rest of the data are ESMTP arguments, separated by a zero byte.
