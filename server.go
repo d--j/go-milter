@@ -307,6 +307,7 @@ type onceCloseListener struct {
 	net.Listener
 	once     sync.Once
 	closeErr error
+	closed   chan struct{}
 }
 
 func (oc *onceCloseListener) Close() error {
@@ -314,27 +315,50 @@ func (oc *onceCloseListener) Close() error {
 	return oc.closeErr
 }
 
-func (oc *onceCloseListener) close() { oc.closeErr = oc.Listener.Close() }
+func (oc *onceCloseListener) close() {
+	close(oc.closed)
+	oc.closeErr = oc.Listener.Close()
+}
 
 // Serve starts the server.
 // You can call this function multiple times to serve on multiple listeners.
 // The server will accept connections until it is closed or shutdown.
+// Accept errors caused by file descriptor exhaustion are retried with a backoff.
+// Other Accept errors are returned to the caller.
 // The function will return ErrServerClosed when the server is closed.
 func (s *Server) Serve(ln net.Listener) error {
-	localLn := &onceCloseListener{Listener: ln}
+	localLn := &onceCloseListener{Listener: ln, closed: make(chan struct{})}
 	if !s.trackListener(localLn, true) {
 		return ErrServerClosed
 	}
 	defer s.trackListener(localLn, false)
 
+	var retryDelay time.Duration
 	for {
 		conn, err := localLn.Accept()
 		if err != nil {
 			if s.shuttingDown() {
 				return nil
 			}
+			if isAcceptResourceError(err) {
+				if retryDelay == 0 {
+					retryDelay = 5 * time.Millisecond
+				} else {
+					retryDelay = min(2*retryDelay, time.Second)
+				}
+				LogWarning("Error accepting milter connection: %v; retrying in %v", err, retryDelay)
+				timer := time.NewTimer(retryDelay)
+				select {
+				case <-localLn.closed:
+					timer.Stop()
+					return nil
+				case <-timer.C:
+				}
+				continue
+			}
 			return err
 		}
+		retryDelay = 0
 		go func(conn net.Conn) {
 			session := serverSession{}
 			if !s.trackSession(&session, true) {
