@@ -22,6 +22,7 @@ type options struct {
 	macrosByStage               macroRequests
 	newMilter                   NewMilterFunc
 	negotiationCallback         NegotiationCallbackFunc
+	onPanicCallback             PanicCallback
 }
 
 // Option can be used to configure [Client] and [Server].
@@ -192,5 +193,17 @@ func WithDynamicMilter(newMilter NewMilterFunc) Option {
 func WithNegotiationCallback(negotiationCallback NegotiationCallbackFunc) Option {
 	return func(h *options) {
 		h.negotiationCallback = negotiationCallback
+	}
+}
+
+// PanicCallback is the signature of a function that can be used with [WithOnPanic] to handle panics
+// that the [Server] recovered from. It receives the value that was passed to panic.
+type PanicCallback func(any)
+
+// WithOnPanic sets a custom callback function that receives panics that the milter backend caught.
+// If you do not set this, panics get logged with [LogWarning].
+func WithOnPanic(callback PanicCallback) Option {
+	return func(opt *options) {
+		opt.onPanicCallback = callback
 	}
 }

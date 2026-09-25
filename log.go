@@ -5,7 +5,7 @@ import (
 	"log"
 )
 
-func logWarning(format string, v ...interface{}) {
+func logWarning(format string, v ...any) {
 	log.Printf(fmt.Sprintf("milter: warning: %s", format), v...)
 }
 

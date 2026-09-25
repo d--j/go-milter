@@ -66,7 +66,7 @@ var fixedBufferPoolsMapMutex sync.RWMutex
 var fixedBufferPoolsMapInit sync.Once
 
 func newFixedBufferScannerPool(bufferSize uint32) *sync.Pool {
-	return &sync.Pool{New: func() interface{} {
+	return &sync.Pool{New: func() any {
 		return &FixedBufferScanner{bufferSize: bufferSize, buffer: make([]byte, bufferSize)}
 	}}
 }

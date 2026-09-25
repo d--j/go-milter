@@ -67,7 +67,7 @@ func doFixedBufferScannerBenchmark(b *testing.B, bufferSize uint32, writeSize in
 		for pb.Next() {
 			r, w := io.Pipe()
 			go func() {
-				for i := 0; i < writeCount; i++ {
+				for range writeCount {
 					if _, err := w.Write(buff); err != nil {
 						w.CloseWithError(err)
 						return

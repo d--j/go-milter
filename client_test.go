@@ -208,6 +208,9 @@ type serverClientWrap struct {
 	client  *Client
 	session *ClientSession
 	local   net.Listener
+	// bgDone, when set, gets closed by a background go-routine that uses session.
+	// Cleanup waits for it since ClientSession is not safe for concurrent use.
+	bgDone chan struct{}
 }
 
 func newServerClient(t *testing.T, macros Macros, serverOptions []Option, clientOptions []Option) serverClientWrap {
@@ -231,6 +234,9 @@ func newServerClient(t *testing.T, macros Macros, serverOptions []Option, client
 }
 
 func (w *serverClientWrap) Cleanup() {
+	if w.bgDone != nil {
+		<-w.bgDone
+	}
 	w.session.Close()
 	w.server.Close()
 }
@@ -371,7 +377,7 @@ func TestMilterClient_UsualFlow(t *testing.T) {
 
 func TestMilterClient_AbortFlow(t *testing.T) {
 	t.Parallel()
-	waitChan := make(chan interface{}, 2)
+	waitChan := make(chan any, 2)
 	heloTls := "not set"
 	aborTls := "not set"
 	mailAuthen := "not set"
@@ -559,7 +565,7 @@ func TestMilterClient_BogusServerNegotiation(t *testing.T) {
 			}()
 			warningCalled := false
 			if ltt.onlyWarning {
-				LogWarning = func(format string, v ...interface{}) {
+				LogWarning = func(format string, v ...any) {
 					warningCalled = true
 					logWarning(format, v...)
 				}

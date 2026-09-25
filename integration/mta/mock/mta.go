@@ -6,10 +6,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/d--j/go-milter"
-	"github.com/d--j/go-milter/milterutil"
-	"github.com/emersion/go-sasl"
-	"github.com/emersion/go-smtp"
 	"io"
 	"log"
 	"math/rand"
@@ -18,6 +14,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/d--j/go-milter"
+	"github.com/d--j/go-milter/milterutil"
+	"github.com/emersion/go-sasl"
+	"github.com/emersion/go-smtp"
 )
 
 type Rcpt struct {
@@ -233,7 +234,7 @@ func toRcptOptions(arg string) *smtp.RcptOptions {
 	for _, a := range args {
 		if strings.HasPrefix(a, "NOTIFY=") {
 			foundNever := false
-			for _, n := range strings.Split(a[7:len(a)-1], ",") {
+			for n := range strings.SplitSeq(a[7:len(a)-1], ",") {
 				switch n {
 				case string(smtp.DSNNotifyNever):
 					opts.Notify = []smtp.DSNNotify{smtp.DSNNotifyNever}
@@ -534,7 +535,7 @@ func headerValue(s string) []byte {
 	in := []byte(s)
 	out := make([]byte, 0, len(in))
 	l := len(in)
-	for i := 0; i < l; i++ {
+	for i := range l {
 		out = append(out, in[i])
 		if in[i] == '\n' && i+1 < l && (in[i+1] != ' ' && in[i+1] != '\t') {
 			out = append(out, '\t')

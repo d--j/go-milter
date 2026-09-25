@@ -1,11 +1,14 @@
 package mailfilter
 
+import "github.com/d--j/go-milter"
+
 type options struct {
 	decisionAt      DecisionAt
 	errorHandling   ErrorHandling
 	body            *bodyOption
 	header          *headerOption
 	rcptToValidator RcptToValidator
+	onPanicCallback milter.PanicCallback
 }
 
 type Option func(opt *options)
@@ -134,5 +137,13 @@ func WithBody(maxMem int, maxSize int64, maxAction MaxAction) Option {
 func WithRcptToValidator(validator RcptToValidator) Option {
 	return func(opt *options) {
 		opt.rcptToValidator = validator
+	}
+}
+
+// WithOnPanic sets a custom callback function that receives panics that the mailfilter or its milter backend caught.
+// If you do not set this, panics get logged with [milter.LogWarning].
+func WithOnPanic(callback milter.PanicCallback) Option {
+	return func(opt *options) {
+		opt.onPanicCallback = callback
 	}
 }

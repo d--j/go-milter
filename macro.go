@@ -2,6 +2,7 @@ package milter
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 	"sync"
 	"time"
@@ -140,9 +141,7 @@ func (m *MacroBag) Copy() *MacroBag {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	macros := make(map[MacroName]string)
-	for k, v := range m.macros {
-		macros[k] = v
-	}
+	maps.Copy(macros, m.macros)
 	return &MacroBag{macros: macros}
 }
 
@@ -200,9 +199,7 @@ func (s *macrosStages) SetStageMap(stage MacroStage, kv map[MacroName]string) {
 		panic(fmt.Sprintf("tried to set invalid stage %v", stage))
 	}
 	s.byStages[stage] = make(map[MacroName]string)
-	for k, v := range kv {
-		s.byStages[stage][k] = v
-	}
+	maps.Copy(s.byStages[stage], kv)
 }
 
 func (s *macrosStages) SetStage(stage MacroStage, kv ...string) {

@@ -159,3 +159,18 @@ func TestWithNegotiationCallback(t *testing.T) {
 		t.Fatalf("did not set the correct negotiationCallback")
 	}
 }
+
+func TestWithOnPanic(t *testing.T) {
+	opt := options{}
+	var got any
+	WithOnPanic(func(v any) {
+		got = v
+	})(&opt)
+	if opt.onPanicCallback == nil {
+		t.Fatalf("did not set onPanicCallback")
+	}
+	opt.onPanicCallback("boom")
+	if got != "boom" {
+		t.Fatalf("did not set the correct onPanicCallback, got %v", got)
+	}
+}

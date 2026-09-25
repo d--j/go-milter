@@ -3,8 +3,9 @@ package milterutil
 import (
 	"errors"
 	"fmt"
-	"golang.org/x/text/transform"
 	"unicode/utf8"
+
+	"golang.org/x/text/transform"
 )
 
 const cr = '\r'
@@ -182,8 +183,8 @@ var _ transform.Transformer = (*SkipDoublePercentTransformer)(nil)
 //
 // When you use this Transformer in a [transform.Chain] it can only handle lines with a maximum of 128 bytes.
 type SMTPReplyTransformer struct {
-	Code    uint16
 	rfc2034 string
+	Code    uint16
 	init    bool
 }
 

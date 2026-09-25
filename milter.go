@@ -27,7 +27,7 @@ const (
 // It is used for debugging purposes.
 func (o OptAction) String() string {
 	var s []string
-	for i := 0; i < 32; i++ {
+	for i := range 32 {
 		if o&(1<<i) != 0 {
 			switch i {
 			case 0:
@@ -118,7 +118,7 @@ const (
 // It is used for debugging purposes.
 func (o OptProtocol) String() string {
 	var s []string
-	for i := 0; i < 32; i++ {
+	for i := range 32 {
 		if o&(1<<i) != 0 {
 			switch i {
 			case 0:

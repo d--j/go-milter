@@ -207,6 +207,8 @@ const (
 )
 
 // ClientSession is a connection to one Client for one SMTP connection.
+//
+// A ClientSession is not goroutine safe. You should handle one ClientSession in one goroutine.
 type ClientSession struct {
 	conn net.Conn
 

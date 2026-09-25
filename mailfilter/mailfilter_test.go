@@ -444,3 +444,163 @@ func TestMailFilter_DecisionPanic(t *testing.T) {
 		t.Fatalf("filter.Shutdown failed: %v", err)
 	}
 }
+
+func TestWithOnPanic(t *testing.T) {
+	opt := options{}
+	var got any
+	WithOnPanic(func(v any) {
+		got = v
+	})(&opt)
+	if opt.onPanicCallback == nil {
+		t.Fatalf("did not set onPanicCallback")
+	}
+	opt.onPanicCallback("boom")
+	if got != "boom" {
+		t.Fatalf("did not set the correct onPanicCallback, got %v", got)
+	}
+}
+
+// runPanicSession runs a full SMTP transaction against addr and ignores all errors
+// (the server is expected to drop the connection when it panics).
+func runPanicSession(addr string) {
+	client := milter.NewClient("tcp", addr)
+	session, err := client.Session(nil)
+	if err != nil {
+		return
+	}
+	defer session.Close()
+	if _, err := session.Conn("localhost", milter.FamilyInet, 2525, "127.0.0.1"); err != nil {
+		return
+	}
+	if _, err := session.Helo("localhost"); err != nil {
+		return
+	}
+	if _, err := session.Mail("sender@example.com", ""); err != nil {
+		return
+	}
+	if _, err := session.Rcpt("rcpt@example.com", ""); err != nil {
+		return
+	}
+	if _, err := session.DataStart(); err != nil {
+		return
+	}
+	if _, err := session.HeaderField("Subject", "Test", nil); err != nil {
+		return
+	}
+	if _, err := session.HeaderEnd(); err != nil {
+		return
+	}
+	_, _, _ = session.BodyReadFrom(bytes.NewReader([]byte("test\n")))
+}
+
+func TestMailFilter_OnPanic(t *testing.T) {
+	tests := []struct {
+		name      string
+		decision  DecisionModificationFunc
+		opts      []Option
+		wantPanic string
+	}{
+		{
+			name: "decision",
+			decision: func(ctx context.Context, trx Trx) (Decision, error) {
+				panic("panic in decision")
+			},
+			wantPanic: "panic in decision",
+		},
+		{
+			name: "rcptToValidator",
+			decision: func(ctx context.Context, trx Trx) (Decision, error) {
+				return Accept, nil
+			},
+			opts: []Option{WithRcptToValidator(func(ctx context.Context, in *RcptToValidationInput) (Decision, error) {
+				panic("panic in validator")
+			})},
+			wantPanic: "panic in validator",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			warningChan := make(chan string, 10)
+			origLogWarning := milter.LogWarning
+			milter.LogWarning = func(format string, v ...any) {
+				warningChan <- fmt.Sprintf(format, v...)
+			}
+			defer func() {
+				milter.LogWarning = origLogWarning
+			}()
+
+			panicChan := make(chan any, 1)
+			opts := append(tt.opts, WithOnPanic(func(v any) {
+				panicChan <- v
+			}))
+			filter, err := New("tcp", "127.0.0.1:0", tt.decision, opts...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer filter.Close()
+
+			runPanicSession(filter.Addr().String())
+
+			select {
+			case v := <-panicChan:
+				if v != tt.wantPanic {
+					t.Fatalf("onPanicCallback got %v, want %q", v, tt.wantPanic)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatalf("timed out waiting for onPanicCallback")
+			}
+
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			if err := filter.Shutdown(shutdownCtx); err != nil {
+				t.Fatalf("filter.Shutdown failed: %v", err)
+			}
+
+			milter.LogWarning = origLogWarning
+			close(warningChan)
+			for msg := range warningChan {
+				if strings.Contains(msg, "panic") {
+					t.Fatalf("LogWarning should not be called when WithOnPanic is set, got %q", msg)
+				}
+			}
+		})
+	}
+}
+
+func TestMailFilter_RcptToValidatorPanicWithoutCallback(t *testing.T) {
+	warningChan := make(chan string, 10)
+	origLogWarning := milter.LogWarning
+	milter.LogWarning = func(format string, v ...any) {
+		warningChan <- fmt.Sprintf(format, v...)
+	}
+	defer func() {
+		milter.LogWarning = origLogWarning
+	}()
+
+	filter, err := New("tcp", "127.0.0.1:0", func(ctx context.Context, trx Trx) (Decision, error) {
+		return Accept, nil
+	}, WithRcptToValidator(func(ctx context.Context, in *RcptToValidationInput) (Decision, error) {
+		panic("panic in validator")
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer filter.Close()
+
+	runPanicSession(filter.Addr().String())
+
+	select {
+	case msg := <-warningChan:
+		if !strings.Contains(msg, "panic in milter session") || !strings.Contains(msg, "panic in validator") {
+			t.Fatalf("expected panic warning log, got %q", msg)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for panic warning log")
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := filter.Shutdown(shutdownCtx); err != nil {
+		t.Fatalf("filter.Shutdown failed: %v", err)
+	}
+}

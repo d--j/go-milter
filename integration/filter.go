@@ -5,15 +5,17 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/d--j/go-milter"
 	"log"
 	"net"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/d--j/go-milter"
 
 	"github.com/d--j/go-milter/mailfilter"
 	"golang.org/x/tools/go/buildutil"
@@ -119,12 +121,7 @@ func HasTag(tag string) bool {
 	if !flag.Parsed() {
 		flag.Parse()
 	}
-	for _, t := range Tags {
-		if t == tag {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(Tags, tag)
 }
 
 func Skip(reason string) {

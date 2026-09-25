@@ -10,6 +10,11 @@ import (
 	"github.com/d--j/go-milter/internal/wire"
 )
 
+// msg is a shorthand for creating a *wire.Message in test tables.
+func msg(code wire.Code, data []byte) *wire.Message {
+	return &wire.Message{Code: code, Data: data}
+}
+
 func Test_milterSession_negotiate(t *testing.T) {
 	type fields struct {
 		milterVersion  uint32
@@ -26,16 +31,16 @@ func Test_milterSession_negotiate(t *testing.T) {
 		want    *wire.Message
 		wantErr bool
 	}{
-		{"negotiation error 1", fields{}, &wire.Message{wire.CodeOptNeg, nil}, nil, true},
-		{"negotiation error 2", fields{}, &wire.Message{wire.CodeOptNeg, []byte{0, 0, 0, 99, 0, 0, 0, 0, 0, 0, 0, 0}}, nil, true},
-		{"negotiation error 3", fields{}, &wire.Message{wire.CodeOptNeg, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}}, nil, true},
+		{"negotiation error 1", fields{}, msg(wire.CodeOptNeg, nil), nil, true},
+		{"negotiation error 2", fields{}, msg(wire.CodeOptNeg, []byte{0, 0, 0, 99, 0, 0, 0, 0, 0, 0, 0, 0}), nil, true},
+		{"negotiation error 3", fields{}, msg(wire.CodeOptNeg, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}), nil, true},
 		{"negotiation error 4", fields{callback: func(mtaVersion, milterVersion uint32, mtaActions, milterActions OptAction, mtaProtocol, milterProtocol OptProtocol, offeredMaxData DataSize) (version uint32, actions OptAction, protocol OptProtocol, maxData DataSize, err error) {
 			return 0, 0, 0, 0, errors.New("error")
-		}}, &wire.Message{wire.CodeOptNeg, []byte{0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0}}, nil, true},
+		}}, msg(wire.CodeOptNeg, []byte{0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0}), nil, true},
 		{"negotiation", fields{callback: func(mtaVersion, milterVersion uint32, mtaActions, milterActions OptAction, mtaProtocol, milterProtocol OptProtocol, offeredMaxData DataSize) (version uint32, actions OptAction, protocol OptProtocol, maxData DataSize, err error) {
 			return milterVersion, OptAddHeader, OptNoConnect, DataSize64K, nil
-		}}, &wire.Message{wire.CodeOptNeg, []byte{0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0}}, &wire.Message{wire.CodeOptNeg, []byte{0, 0, 0, 6, 0, 0, 0, 1, 0, 0, 0, 1}}, false},
-		{"negotiation macros", fields{milterActions: OptSetMacros, macroRequests: macroRequests{{"j", "_"}, {"i"}}}, &wire.Message{wire.CodeOptNeg, []byte{0, 0, 0, 2, 0, 0, 1, 0, 0, 0, 0, 0}}, &wire.Message{wire.CodeOptNeg, []byte{0, 0, 0, 2, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 'j', ' ', '_', 0, 0, 0, 0, 1, 'i', 0}}, false},
+		}}, msg(wire.CodeOptNeg, []byte{0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0}), msg(wire.CodeOptNeg, []byte{0, 0, 0, 6, 0, 0, 0, 1, 0, 0, 0, 1}), false},
+		{"negotiation macros", fields{milterActions: OptSetMacros, macroRequests: macroRequests{{"j", "_"}, {"i"}}}, msg(wire.CodeOptNeg, []byte{0, 0, 0, 2, 0, 0, 1, 0, 0, 0, 0, 0}), msg(wire.CodeOptNeg, []byte{0, 0, 0, 2, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 'j', ' ', '_', 0, 0, 0, 0, 1, 'i', 0}), false},
 	}
 	for _, tt_ := range tests {
 		t.Run(tt_.name, func(t *testing.T) {
@@ -234,15 +239,15 @@ func Test_milterSession_processMsg(t *testing.T) {
 		{"abort-3", fields{backend: err}, &wire.Message{Code: wire.CodeAbort}, nil, true},
 		{"quit-new-conn", fields{
 			backend: def,
-		}, &wire.Message{wire.CodeQuitNewConn, nil}, nil, false},
+		}, msg(wire.CodeQuitNewConn, nil), nil, false},
 		{"quit", fields{
 			backend: def,
-		}, &wire.Message{wire.CodeQuit, nil}, nil, false},
+		}, msg(wire.CodeQuit, nil), nil, false},
 		{"unknown-code", fields{
 			backend: def,
-		}, &wire.Message{wire.Code('@'), nil}, nil, true},
-		{"conn err 1", fields{backend: err}, &wire.Message{wire.CodeConn, []byte{'h', 0, 'L', 0, 0, '/', 'r', 'u', 'n', 0}}, cont, true},
-		{"conn err 2", fields{backend: def}, &wire.Message{wire.CodeConn, nil}, nil, true},
+		}, msg(wire.Code('@'), nil), nil, true},
+		{"conn err 1", fields{backend: err}, msg(wire.CodeConn, []byte{'h', 0, 'L', 0, 0, '/', 'r', 'u', 'n', 0}), cont, true},
+		{"conn err 2", fields{backend: def}, msg(wire.CodeConn, nil), nil, true},
 		{"conn unknown protocol", fields{
 			backend: def,
 			check: func(t *testing.T, s *serverSession, stack *processTestMilterStack) {
@@ -260,7 +265,7 @@ func Test_milterSession_processMsg(t *testing.T) {
 					t.Errorf("expected \"\", got %q", p.host)
 				}
 			},
-		}, &wire.Message{wire.CodeConn, []byte{0, 'U'}}, cont, false},
+		}, msg(wire.CodeConn, []byte{0, 'U'}), cont, false},
 		{"conn unix protocol", fields{
 			backend: def,
 			check: func(t *testing.T, s *serverSession, stack *processTestMilterStack) {
@@ -278,7 +283,7 @@ func Test_milterSession_processMsg(t *testing.T) {
 					t.Errorf("expected \"h\", got %q", p.host)
 				}
 			},
-		}, &wire.Message{wire.CodeConn, []byte{'h', 0, 'L', 0, 0, '/', 'r', 'u', 'n', 0}}, cont, false},
+		}, msg(wire.CodeConn, []byte{'h', 0, 'L', 0, 0, '/', 'r', 'u', 'n', 0}), cont, false},
 		{"conn tcp4 protocol", fields{
 			backend: def,
 			check: func(t *testing.T, s *serverSession, stack *processTestMilterStack) {
@@ -296,10 +301,10 @@ func Test_milterSession_processMsg(t *testing.T) {
 					t.Errorf("expected \"h\", got %q", p.host)
 				}
 			},
-		}, &wire.Message{wire.CodeConn, []byte{'h', 0, '4', 9, 251, '1', '2', '7', '.', '0', '.', '0', '.', '1', '2', 0}}, cont, false},
+		}, msg(wire.CodeConn, []byte{'h', 0, '4', 9, 251, '1', '2', '7', '.', '0', '.', '0', '.', '1', '2', 0}), cont, false},
 		{"conn tcp4 protocol err", fields{
 			backend: def,
-		}, &wire.Message{wire.CodeConn, []byte{'h', 0, '4', 9, 251, '6', '6', '6', '.', '0', '.', '0', '.', '1', '2', 0}}, nil, true},
+		}, msg(wire.CodeConn, []byte{'h', 0, '4', 9, 251, '6', '6', '6', '.', '0', '.', '0', '.', '1', '2', 0}), nil, true},
 		{"conn tcp6 protocol", fields{
 			backend: def,
 			check: func(t *testing.T, s *serverSession, stack *processTestMilterStack) {
@@ -317,7 +322,7 @@ func Test_milterSession_processMsg(t *testing.T) {
 					t.Errorf("expected \"h\", got %q", p.host)
 				}
 			},
-		}, &wire.Message{wire.CodeConn, []byte{'h', 0, '6', 9, 251, ':', ':', 0}}, cont, false},
+		}, msg(wire.CodeConn, []byte{'h', 0, '6', 9, 251, ':', ':', 0}), cont, false},
 		{"conn tcp6 protocol 2", fields{
 			backend: def,
 			check: func(t *testing.T, s *serverSession, stack *processTestMilterStack) {
@@ -335,7 +340,7 @@ func Test_milterSession_processMsg(t *testing.T) {
 					t.Errorf("expected \"h\", got %q", p.host)
 				}
 			},
-		}, &wire.Message{wire.CodeConn, []byte{'h', 0, '6', 9, 251, '[', ':', ':', ']', 0}}, cont, false},
+		}, msg(wire.CodeConn, []byte{'h', 0, '6', 9, 251, '[', ':', ':', ']', 0}), cont, false},
 		{"conn tcp6 protocol 3", fields{
 			backend: def,
 			check: func(t *testing.T, s *serverSession, stack *processTestMilterStack) {
@@ -353,19 +358,19 @@ func Test_milterSession_processMsg(t *testing.T) {
 					t.Errorf("expected \"h\", got %q", p.host)
 				}
 			},
-		}, &wire.Message{wire.CodeConn, []byte{'h', 0, '6', 9, 251, 'I', 'P', 'v', '6', ':', '0', ':', '0', ':', '0', ':', '0', ':', '0', ':', '0', ':', '0', ':', '1', 0}}, cont, false},
+		}, msg(wire.CodeConn, []byte{'h', 0, '6', 9, 251, 'I', 'P', 'v', '6', ':', '0', ':', '0', ':', '0', ':', '0', ':', '0', ':', '0', ':', '0', ':', '1', 0}), cont, false},
 		{"conn tcp6 protocol err", fields{
 			backend: def,
-		}, &wire.Message{wire.CodeConn, []byte{'h', 0, '6', 9, 251, '[', '@', ']', 0}}, nil, true},
+		}, msg(wire.CodeConn, []byte{'h', 0, '6', 9, 251, '[', '@', ']', 0}), nil, true},
 		{"conn tcp6 protocol err 2", fields{
 			backend: def,
-		}, &wire.Message{wire.CodeConn, []byte{'h', 0, '6', 9}}, nil, true},
+		}, msg(wire.CodeConn, []byte{'h', 0, '6', 9}), nil, true},
 		{"conn bogus protocol err", fields{
 			backend: def,
-		}, &wire.Message{wire.CodeConn, []byte{'h', 0, '+', 9, 251, '[', ':', ':', ']', 0}}, nil, true},
+		}, msg(wire.CodeConn, []byte{'h', 0, '+', 9, 251, '[', ':', ':', ']', 0}), nil, true},
 		{"conn accept", fields{
 			backend: acceptAll,
-		}, &wire.Message{wire.CodeConn, []byte{'h', 0, '4', 9, 251, '1', '2', '7', '.', '0', '.', '0', '.', '1', '2', 0}}, accept, false},
+		}, msg(wire.CodeConn, []byte{'h', 0, '4', 9, 251, '1', '2', '7', '.', '0', '.', '0', '.', '1', '2', 0}), accept, false},
 		{"helo", fields{
 			backend: def,
 			check: func(t *testing.T, s *serverSession, stack *processTestMilterStack) {
@@ -373,14 +378,14 @@ func Test_milterSession_processMsg(t *testing.T) {
 					t.Errorf("expected h, got %q", stack.last().name)
 				}
 			},
-		}, &wire.Message{wire.CodeHelo, []byte{'h', 0}}, cont, false},
+		}, msg(wire.CodeHelo, []byte{'h', 0}), cont, false},
 		{"helo accept", fields{
 			backend: acceptAll,
-		}, &wire.Message{wire.CodeHelo, []byte{'h', 0}}, accept, false},
-		{"helo-err-1", fields{backend: err}, &wire.Message{wire.CodeHelo, []byte{'h', 0}}, cont, true},
+		}, msg(wire.CodeHelo, []byte{'h', 0}), accept, false},
+		{"helo-err-1", fields{backend: err}, msg(wire.CodeHelo, []byte{'h', 0}), cont, true},
 		{"helo-err-2", fields{
 			backend: def,
-		}, &wire.Message{wire.CodeHelo, []byte{}}, nil, true},
+		}, msg(wire.CodeHelo, []byte{}), nil, true},
 		{"mail", fields{
 			backend: def,
 			check: func(t *testing.T, s *serverSession, stack *processTestMilterStack) {
@@ -391,10 +396,10 @@ func Test_milterSession_processMsg(t *testing.T) {
 					t.Errorf("expected \"\", got %q", stack.last().fromEsmtp)
 				}
 			},
-		}, &wire.Message{wire.CodeMail, []byte{'<', 'r', '>', 0}}, cont, false},
+		}, msg(wire.CodeMail, []byte{'<', 'r', '>', 0}), cont, false},
 		{"mail accept", fields{
 			backend: acceptAll,
-		}, &wire.Message{wire.CodeMail, []byte{'<', 'r', '>', 0}}, accept, false},
+		}, msg(wire.CodeMail, []byte{'<', 'r', '>', 0}), accept, false},
 		{"mail esmtp", fields{
 			backend: def,
 			check: func(t *testing.T, s *serverSession, stack *processTestMilterStack) {
@@ -405,7 +410,7 @@ func Test_milterSession_processMsg(t *testing.T) {
 					t.Errorf("expected A=B, got %q", stack.last().fromEsmtp)
 				}
 			},
-		}, &wire.Message{wire.CodeMail, []byte{'<', 'r', '>', 0, 'A', '=', 'B', 0}}, cont, false},
+		}, msg(wire.CodeMail, []byte{'<', 'r', '>', 0, 'A', '=', 'B', 0}), cont, false},
 		{"mail esmtp multi", fields{
 			backend: def,
 			check: func(t *testing.T, s *serverSession, stack *processTestMilterStack) {
@@ -416,14 +421,14 @@ func Test_milterSession_processMsg(t *testing.T) {
 					t.Errorf("expected A=B C=D, got %q", stack.last().fromEsmtp)
 				}
 			},
-		}, &wire.Message{wire.CodeMail, []byte{'<', 'r', '>', 0, 'A', '=', 'B', 0, 'C', '=', 'D', 0}}, cont, false},
-		{"mail-err-1", fields{backend: err}, &wire.Message{wire.CodeMail, []byte{'<', 'r', '>', 0}}, cont, true},
+		}, msg(wire.CodeMail, []byte{'<', 'r', '>', 0, 'A', '=', 'B', 0, 'C', '=', 'D', 0}), cont, false},
+		{"mail-err-1", fields{backend: err}, msg(wire.CodeMail, []byte{'<', 'r', '>', 0}), cont, true},
 		{"mail-err-2", fields{
 			backend: def,
-		}, &wire.Message{wire.CodeMail, []byte{}}, nil, true},
+		}, msg(wire.CodeMail, []byte{}), nil, true},
 		{"mail-err-3", fields{
 			backend: err,
-		}, &wire.Message{wire.CodeMail, []byte{'<', 'r', '>', 0, 'A', '=', 'B', 0}}, cont, true},
+		}, msg(wire.CodeMail, []byte{'<', 'r', '>', 0, 'A', '=', 'B', 0}), cont, true},
 		{"rcpt", fields{
 			backend: def,
 			check: func(t *testing.T, s *serverSession, stack *processTestMilterStack) {
@@ -434,10 +439,10 @@ func Test_milterSession_processMsg(t *testing.T) {
 					t.Errorf("expected \"\", got %q", stack.last().rcptEsmtp)
 				}
 			},
-		}, &wire.Message{wire.CodeRcpt, []byte{'<', 'r', '>', 0}}, cont, false},
+		}, msg(wire.CodeRcpt, []byte{'<', 'r', '>', 0}), cont, false},
 		{"rcpt accept", fields{
 			backend: acceptAll,
-		}, &wire.Message{wire.CodeRcpt, []byte{'<', 'r', '>', 0}}, accept, false},
+		}, msg(wire.CodeRcpt, []byte{'<', 'r', '>', 0}), accept, false},
 		{"rcpt-repeat", fields{
 			backend: def,
 			check: func(t *testing.T, s *serverSession, stack *processTestMilterStack) {
@@ -448,7 +453,7 @@ func Test_milterSession_processMsg(t *testing.T) {
 					t.Errorf("expected \"\", got %q", stack.last().rcptEsmtp)
 				}
 			},
-		}, &wire.Message{wire.CodeRcpt, []byte{'<', 'r', '>', 0}}, cont, false},
+		}, msg(wire.CodeRcpt, []byte{'<', 'r', '>', 0}), cont, false},
 		{"rcpt esmtp", fields{
 			backend: def,
 			check: func(t *testing.T, s *serverSession, stack *processTestMilterStack) {
@@ -459,7 +464,7 @@ func Test_milterSession_processMsg(t *testing.T) {
 					t.Errorf("expected A=B, got %q", stack.last().rcptEsmtp)
 				}
 			},
-		}, &wire.Message{wire.CodeRcpt, []byte{'<', 'r', '>', 0, 'A', '=', 'B', 0}}, cont, false},
+		}, msg(wire.CodeRcpt, []byte{'<', 'r', '>', 0, 'A', '=', 'B', 0}), cont, false},
 		{"rcpt esmtp multi", fields{
 			backend: def,
 			check: func(t *testing.T, s *serverSession, stack *processTestMilterStack) {
@@ -470,11 +475,11 @@ func Test_milterSession_processMsg(t *testing.T) {
 					t.Errorf("expected A=B C=D, got %q", stack.last().rcptEsmtp)
 				}
 			},
-		}, &wire.Message{wire.CodeRcpt, []byte{'<', 'r', '>', 0, 'A', '=', 'B', 0, 'C', '=', 'D', 0}}, cont, false},
-		{"rcpt-err-1", fields{backend: err}, &wire.Message{wire.CodeRcpt, []byte{'<', 'r', '>', 0}}, cont, true},
+		}, msg(wire.CodeRcpt, []byte{'<', 'r', '>', 0, 'A', '=', 'B', 0, 'C', '=', 'D', 0}), cont, false},
+		{"rcpt-err-1", fields{backend: err}, msg(wire.CodeRcpt, []byte{'<', 'r', '>', 0}), cont, true},
 		{"rcpt-err-2", fields{
 			backend: def,
-		}, &wire.Message{wire.CodeRcpt, []byte{}}, nil, true},
+		}, msg(wire.CodeRcpt, []byte{}), nil, true},
 		{"data", fields{
 			backend: def,
 			check: func(t *testing.T, s *serverSession, stack *processTestMilterStack) {
@@ -482,11 +487,11 @@ func Test_milterSession_processMsg(t *testing.T) {
 					t.Errorf("expected dataCalled false")
 				}
 			},
-		}, &wire.Message{wire.CodeData, nil}, cont, false},
+		}, msg(wire.CodeData, nil), cont, false},
 		{"data accept", fields{
 			backend: acceptAll,
-		}, &wire.Message{wire.CodeData, nil}, accept, false},
-		{"data-err-1", fields{backend: err}, &wire.Message{wire.CodeData, nil}, cont, true},
+		}, msg(wire.CodeData, nil), accept, false},
+		{"data-err-1", fields{backend: err}, msg(wire.CodeData, nil), cont, true},
 		{"header", fields{
 			backend: def,
 			check: func(t *testing.T, s *serverSession, stack *processTestMilterStack) {
@@ -497,17 +502,17 @@ func Test_milterSession_processMsg(t *testing.T) {
 					t.Errorf("expected <>, got %q", stack.last().hdrName)
 				}
 			},
-		}, &wire.Message{wire.CodeHeader, []byte{'T', 'o', 0, '<', '>', 0}}, cont, false},
+		}, msg(wire.CodeHeader, []byte{'T', 'o', 0, '<', '>', 0}), cont, false},
 		{"header accept", fields{
 			backend: acceptAll,
-		}, &wire.Message{wire.CodeHeader, []byte{'T', 'o', 0, '<', '>', 0}}, accept, false},
-		{"header-err-1", fields{backend: err}, &wire.Message{wire.CodeHeader, []byte{'T', 'o', 0, '<', '>', 0}}, cont, true},
+		}, msg(wire.CodeHeader, []byte{'T', 'o', 0, '<', '>', 0}), accept, false},
+		{"header-err-1", fields{backend: err}, msg(wire.CodeHeader, []byte{'T', 'o', 0, '<', '>', 0}), cont, true},
 		{"header-err-2", fields{
 			backend: def,
-		}, &wire.Message{wire.CodeHeader, []byte{'T', 'o', 0}}, nil, true},
+		}, msg(wire.CodeHeader, []byte{'T', 'o', 0}), nil, true},
 		{"header-err-3", fields{
 			backend: def,
-		}, &wire.Message{wire.CodeHeader, []byte{}}, nil, true},
+		}, msg(wire.CodeHeader, []byte{}), nil, true},
 		{"eoh", fields{
 			backend: def,
 			check: func(t *testing.T, s *serverSession, stack *processTestMilterStack) {
@@ -515,11 +520,11 @@ func Test_milterSession_processMsg(t *testing.T) {
 					t.Errorf("Headers() not called")
 				}
 			},
-		}, &wire.Message{wire.CodeEOH, nil}, cont, false},
+		}, msg(wire.CodeEOH, nil), cont, false},
 		{"eoh accept", fields{
 			backend: acceptAll,
-		}, &wire.Message{wire.CodeEOH, nil}, accept, false},
-		{"eoh-err-1", fields{backend: err}, &wire.Message{wire.CodeEOH, nil}, cont, true},
+		}, msg(wire.CodeEOH, nil), accept, false},
+		{"eoh-err-1", fields{backend: err}, msg(wire.CodeEOH, nil), cont, true},
 		{"body empty", fields{
 			backend: def,
 			check: func(t *testing.T, s *serverSession, stack *processTestMilterStack) {
@@ -527,7 +532,7 @@ func Test_milterSession_processMsg(t *testing.T) {
 					t.Errorf("expected \"\", got %q", stack.last().chunk)
 				}
 			},
-		}, &wire.Message{wire.CodeBody, []byte{}}, cont, false},
+		}, msg(wire.CodeBody, []byte{}), cont, false},
 		{"body", fields{
 			backend: def,
 			check: func(t *testing.T, s *serverSession, stack *processTestMilterStack) {
@@ -535,11 +540,11 @@ func Test_milterSession_processMsg(t *testing.T) {
 					t.Errorf("expected \"abc\", got %q", stack.last().chunk)
 				}
 			},
-		}, &wire.Message{wire.CodeBody, []byte{'a', 'b', 'c'}}, cont, false},
+		}, msg(wire.CodeBody, []byte{'a', 'b', 'c'}), cont, false},
 		{"body accept", fields{
 			backend: acceptAll,
-		}, &wire.Message{wire.CodeBody, []byte{'a', 'b', 'c'}}, accept, false},
-		{"body-err-1", fields{backend: err}, &wire.Message{wire.CodeBody, []byte{'a', 'b', 'c'}}, cont, true},
+		}, msg(wire.CodeBody, []byte{'a', 'b', 'c'}), accept, false},
+		{"body-err-1", fields{backend: err}, msg(wire.CodeBody, []byte{'a', 'b', 'c'}), cont, true},
 		{"end", fields{
 			backend: def,
 			check: func(t *testing.T, s *serverSession, stack *processTestMilterStack) {
@@ -547,8 +552,8 @@ func Test_milterSession_processMsg(t *testing.T) {
 					t.Errorf("EndOfMessage() not called")
 				}
 			},
-		}, &wire.Message{wire.CodeEOB, []byte{'a', 'b', 'c'}}, &wire.Message{wire.Code(wire.ActAccept), nil}, false},
-		{"end-err-1", fields{backend: err}, &wire.Message{wire.CodeEOB, []byte{'a', 'b', 'c'}}, accept, true},
+		}, msg(wire.CodeEOB, []byte{'a', 'b', 'c'}), msg(wire.Code(wire.ActAccept), nil), false},
+		{"end-err-1", fields{backend: err}, msg(wire.CodeEOB, []byte{'a', 'b', 'c'}), accept, true},
 		{"unknown", fields{
 			backend: def,
 			check: func(t *testing.T, s *serverSession, stack *processTestMilterStack) {
@@ -557,13 +562,13 @@ func Test_milterSession_processMsg(t *testing.T) {
 					t.Errorf("expected abc, got %q", p.cmd)
 				}
 			},
-		}, &wire.Message{wire.CodeUnknown, []byte{'a', 'b', 'c', 0}}, cont, false},
+		}, msg(wire.CodeUnknown, []byte{'a', 'b', 'c', 0}), cont, false},
 		{"unknown accept", fields{
 			backend: acceptAll,
-		}, &wire.Message{wire.CodeUnknown, []byte{'a', 'b', 'c', 0}}, accept, false},
+		}, msg(wire.CodeUnknown, []byte{'a', 'b', 'c', 0}), accept, false},
 		{"unknown-err-1", fields{
 			backend: err,
-		}, &wire.Message{wire.CodeUnknown, []byte{'a', 'b', 'c', 0}}, cont, true},
+		}, msg(wire.CodeUnknown, []byte{'a', 'b', 'c', 0}), cont, true},
 		{"macro 1", fields{
 			backend: def,
 			check: func(t *testing.T, s *serverSession, stack *processTestMilterStack) {
@@ -571,7 +576,7 @@ func Test_milterSession_processMsg(t *testing.T) {
 					t.Errorf("should be <nil>")
 				}
 			},
-		}, &wire.Message{wire.CodeMacro, []byte{byte(wire.CodeConn)}}, nil, false},
+		}, msg(wire.CodeMacro, []byte{byte(wire.CodeConn)}), nil, false},
 		{"macro 2", fields{
 			backend: def,
 			check: func(t *testing.T, s *serverSession, stack *processTestMilterStack) {
@@ -583,7 +588,7 @@ func Test_milterSession_processMsg(t *testing.T) {
 					t.Errorf("expect %+v, got %+v", expect, s.macros.byStages[StageConnect])
 				}
 			},
-		}, &wire.Message{wire.CodeMacro, []byte{byte(wire.CodeConn), 'j', 0, '1', 0, 'i', 0, '2', 0}}, nil, false},
+		}, msg(wire.CodeMacro, []byte{byte(wire.CodeConn), 'j', 0, '1', 0, 'i', 0, '2', 0}), nil, false},
 		{"macro 3", fields{
 			backend: def,
 			check: func(t *testing.T, s *serverSession, stack *processTestMilterStack) {
@@ -595,14 +600,14 @@ func Test_milterSession_processMsg(t *testing.T) {
 					t.Errorf("expect %+v, got %+v", expect, s.macros.byStages[StageConnect])
 				}
 			},
-		}, &wire.Message{wire.CodeMacro, []byte{byte(wire.CodeConn), 'j', 0, '1', 0, 'i', 0}}, nil, false},
+		}, msg(wire.CodeMacro, []byte{byte(wire.CodeConn), 'j', 0, '1', 0, 'i', 0}), nil, false},
 		{"macro err", fields{
 			backend: def,
-		}, &wire.Message{wire.CodeMacro, []byte{}}, nil, true},
-		{"conn hostname not terminated", fields{backend: def}, &wire.Message{wire.CodeConn, []byte{'h'}}, nil, true},
-		{"conn missing family", fields{backend: def}, &wire.Message{wire.CodeConn, []byte{'h', 0}}, nil, true},
-		{"mail not terminated", fields{backend: def}, &wire.Message{wire.CodeMail, []byte{'<', 'a', '>'}}, nil, true},
-		{"rcpt not terminated", fields{backend: def}, &wire.Message{wire.CodeRcpt, []byte{'<', 'a', '>'}}, nil, true},
+		}, msg(wire.CodeMacro, []byte{}), nil, true},
+		{"conn hostname not terminated", fields{backend: def}, msg(wire.CodeConn, []byte{'h'}), nil, true},
+		{"conn missing family", fields{backend: def}, msg(wire.CodeConn, []byte{'h', 0}), nil, true},
+		{"mail not terminated", fields{backend: def}, msg(wire.CodeMail, []byte{'<', 'a', '>'}), nil, true},
+		{"rcpt not terminated", fields{backend: def}, msg(wire.CodeRcpt, []byte{'<', 'a', '>'}), nil, true},
 	}
 	for _, tt_ := range tests {
 		t.Run(tt_.name, func(t *testing.T) {

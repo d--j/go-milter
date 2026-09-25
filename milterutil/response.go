@@ -36,12 +36,33 @@ func FormatResponse(smtpCode uint16, reason string) (string, error) {
 	if len(reason) > MaxResponseSize-4 {
 		return "", fmt.Errorf("milter: reason too long: %d > %d", len(reason), MaxResponseSize-4)
 	}
+	reason = strings.TrimRight(reason, "\r\n")
+	// bail early if the formatted reason will be too long – this avoids running the transformers on huge inputs
+	if minLen := minFormattedResponseLen(reason); minLen > MaxResponseSize {
+		return "", fmt.Errorf("milter: formatted reason too long: at least %d > %d", minLen, MaxResponseSize)
+	}
 	escapeAndNormalize := transform.Chain(&NulToSpTransformer{}, &DoublePercentTransformer{}, &CrLfCanonicalizationTransformer{})
-	data, _, _ := transform.String(escapeAndNormalize, strings.TrimRight(reason, "\r\n"))
+	data, _, _ := transform.String(escapeAndNormalize, reason)
 	data, _, _ = transform.String(&MaximumLineLengthTransformer{}, data)
 	data, _, _ = transform.String(&SMTPReplyTransformer{Code: smtpCode}, data)
 	if len(data) > MaxResponseSize {
 		return "", fmt.Errorf("milter: formatted reason too long: %d > %d", len(data), MaxResponseSize)
 	}
 	return data, nil
+}
+
+// minFormattedResponseLen returns a lower bound of the length that [FormatResponse] produces for reason.
+// reason must already have its trailing line endings removed.
+//
+// The calculation is exact for the escaping and CR LF canonicalization and the 4 byte SMTP code prefix of each line.
+// It ignores the line breaks [MaximumLineLengthTransformer] inserts and the repeated RFC 2034 enhanced error codes.
+// Both only make the result longer, so the returned value never overestimates.
+func minFormattedResponseLen(reason string) int {
+	crLf := strings.Count(reason, "\r\n")
+	cr := strings.Count(reason, "\r")
+	lf := strings.Count(reason, "\n")
+	// CR LF stays as-is, a lone CR or lone LF gets expanded to CR LF
+	lineBreaks := cr + lf - crLf
+	escapedLen := len(reason) + strings.Count(reason, "%") + (cr - crLf) + (lf - crLf)
+	return escapedLen + 4*(lineBreaks+1)
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/d--j/go-milter/integration"
@@ -153,14 +154,14 @@ func (r *Runner) runTestCase(dir *TestDir, t *TestCase) bool {
 	}
 	quit()
 	if len(sendmail) > 0 {
-		diff := ""
+		var diff strings.Builder
 		for i, f := range sendmail {
-			diff += f.TransactionName + "\n" + f.Diff
+			diff.WriteString(f.TransactionName + "\n" + f.Diff)
 			if i < len(sendmail)-1 {
-				diff += "\n"
+				diff.WriteString("\n")
 			}
 		}
-		t.MarkOk("OK (sendmail) %s", diff)
+		t.MarkOk("OK (sendmail) %s", diff.String())
 	} else {
 		t.MarkOk("OK")
 	}
