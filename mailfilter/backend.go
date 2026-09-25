@@ -163,25 +163,35 @@ func (b *backend) RcptTo(rcptTo string, esmtpArgs string, m milter.Modifier) (*m
 		type ret struct {
 			Decision Decision
 			Err      error
+			Panic    any
 		}
 		done := make(chan ret)
 		go func() {
+			// overwritten when the validator returns; reports runtime.Goexit as an error
+			result := ret{Err: errors.New("mailfilter: recipient validator did not return")}
+			defer func() {
+				result.Panic = recover()
+				done <- result
+			}()
 			mtaCopy := *b.transaction.MTA()
 			connectCopy := *b.transaction.Connect()
 			heloCopy := *b.transaction.Helo()
-			dec, err := b.opts.rcptToValidator(ctx, &RcptToValidationInput{
+			result.Decision, result.Err = b.opts.rcptToValidator(ctx, &RcptToValidationInput{
 				MTA:      &mtaCopy,
 				Connect:  &connectCopy,
 				Helo:     &heloCopy,
 				MailFrom: b.transaction.MailFrom().Copy(),
 				RcptTo:   addr.NewRcptTo(rcptTo, esmtpArgs, m.Get(milter.MacroRcptMailer)),
 			})
-			done <- ret{dec, err}
 		}()
 		for {
 			select {
 			case r := <-done:
 				cancel()
+				// Re-panic in the session goroutine so the server can recover.
+				if r.Panic != nil {
+					panic(r.Panic)
+				}
 				if r.Err != nil {
 					return b.error(r.Err)
 				}
@@ -202,6 +212,9 @@ func (b *backend) RcptTo(rcptTo string, esmtpArgs string, m milter.Modifier) (*m
 					cancel()
 					// wait for validator function
 					r := <-done
+					if r.Panic != nil {
+						panic(r.Panic)
+					}
 					// if there was no error in the validator function (e.g. it did not actually check ctx.Done())
 					// return the context error (it is non-nil at this point)
 					if r.Err == nil {
