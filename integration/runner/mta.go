@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -50,12 +51,7 @@ func (m *MTA) String() string {
 }
 
 func (m *MTA) HasTag(tag string) bool {
-	for _, t := range m.tags {
-		if t == tag {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(m.tags, tag)
 }
 
 func (m *MTA) MarkFailedTest() {

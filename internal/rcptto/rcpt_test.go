@@ -29,7 +29,6 @@ func Test_calculateRcptToDiff(t *testing.T) {
 		{"change", args{[]*addr.RcptTo{addr.NewRcptTo("one", "", "")}, []*addr.RcptTo{addr.NewRcptTo("one", "A=B", "")}}, []*addr.RcptTo{addr.NewRcptTo("one", "", "")}, []*addr.RcptTo{addr.NewRcptTo("one", "A=B", "")}},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			gotDeletions, gotAdditions := Diff(tt.args.orig, tt.args.changed)
@@ -58,7 +57,6 @@ func TestHas(t *testing.T) {
 		{"has not", args{[]*addr.RcptTo{addr.NewRcptTo("root", "", "")}, "toor"}, false},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := Has(tt.args.rcptTos, tt.args.rcptTo); got != tt.want {
@@ -113,7 +111,6 @@ func TestAdd(t *testing.T) {
 		{"change", args{[]*addr.RcptTo{addr.NewRcptTo("root", "", "smtp")}, "root", "A=B"}, []*addr.RcptTo{addr.NewRcptTo("root", "A=B", "smtp")}},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if gotOut := Add(tt.args.rcptTos, tt.args.rcptTo, tt.args.esmtpArgs); !cmp(gotOut, tt.wantOut) {
@@ -141,7 +138,6 @@ func TestDel(t *testing.T) {
 		{"found2", args{[]*addr.RcptTo{addr.NewRcptTo("root", "", "smtp"), addr.NewRcptTo("toor", "", "smtp")}, "root"}, []*addr.RcptTo{addr.NewRcptTo("toor", "", "smtp")}},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if gotOut := Del(tt.args.rcptTos, tt.args.rcptTo); !cmp(gotOut, tt.wantOut) {

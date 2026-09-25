@@ -722,7 +722,7 @@ func Test_backend_error(t *testing.T) {
 		milter.LogWarning = savedWarning
 	}()
 	warningCalled := 0
-	milter.LogWarning = func(_ string, _ ...interface{}) {
+	milter.LogWarning = func(_ string, _ ...any) {
 		warningCalled++
 	}
 	expected := errors.New("error")

@@ -371,7 +371,7 @@ func TestMilterClient_UsualFlow(t *testing.T) {
 
 func TestMilterClient_AbortFlow(t *testing.T) {
 	t.Parallel()
-	waitChan := make(chan interface{}, 2)
+	waitChan := make(chan any, 2)
 	heloTls := "not set"
 	aborTls := "not set"
 	mailAuthen := "not set"

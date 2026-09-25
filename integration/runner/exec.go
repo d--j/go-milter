@@ -23,7 +23,7 @@ func Build(goDir string, output string) error {
 }
 
 func WaitForPort(ctx context.Context, port uint16) error {
-	for i := 0; i < 1200; i++ {
+	for range 1200 {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()

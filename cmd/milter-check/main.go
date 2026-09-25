@@ -111,7 +111,7 @@ func main() {
 		return
 	}
 
-	for _, rcpt := range strings.Split(*rcptTo, ",") {
+	for rcpt := range strings.SplitSeq(*rcptTo, ",") {
 		act, err = s.Rcpt(rcpt, "")
 		if err != nil {
 			log.Println(err)

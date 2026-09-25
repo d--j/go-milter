@@ -24,11 +24,11 @@ func DecodeCStrings(data []byte) []string {
 // ReadCString reads and returns a C style string from []byte.
 // If data does not contain a null-byte the whole data-slice is returned as string
 func ReadCString(data []byte) string {
-	pos := bytes.IndexByte(data, 0)
-	if pos == -1 {
+	before, _, ok := bytes.Cut(data, []byte{0})
+	if !ok {
 		return string(data)
 	}
-	return string(data[0:pos])
+	return string(before)
 }
 
 // AppendCString appends a C style string to the buffer and returns it (like append does).

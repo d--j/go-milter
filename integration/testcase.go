@@ -488,8 +488,8 @@ func ParseTestCase(filename string) (*TestCase, error) {
 			break
 		}
 		transactionName := ""
-		if strings.HasPrefix(line, "#") {
-			transactionName = strings.TrimSpace(strings.TrimPrefix(line, "#"))
+		if after, ok := strings.CutPrefix(line, "#"); ok {
+			transactionName = strings.TrimSpace(after)
 			if transactionName == "" {
 				transactionName = fmt.Sprintf("Transaction #%d", len(transactions)+1)
 			}
