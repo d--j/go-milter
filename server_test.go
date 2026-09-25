@@ -257,7 +257,9 @@ func TestServer_Shutdown(t *testing.T) {
 			time.Sleep(time.Millisecond * 100)
 		}, oneSecCtx}, false},
 		{"graceful", args{func(w *serverClientWrap) {
+			w.bgDone = make(chan struct{})
 			go func() {
+				defer close(w.bgDone)
 				if _, err := w.session.Conn("localhost", FamilyInet, 2525, "127.0.0.1"); err != nil {
 					return
 				}

@@ -208,6 +208,9 @@ type serverClientWrap struct {
 	client  *Client
 	session *ClientSession
 	local   net.Listener
+	// bgDone, when set, gets closed by a background go-routine that uses session.
+	// Cleanup waits for it since ClientSession is not safe for concurrent use.
+	bgDone chan struct{}
 }
 
 func newServerClient(t *testing.T, macros Macros, serverOptions []Option, clientOptions []Option) serverClientWrap {
@@ -231,6 +234,9 @@ func newServerClient(t *testing.T, macros Macros, serverOptions []Option, client
 }
 
 func (w *serverClientWrap) Cleanup() {
+	if w.bgDone != nil {
+		<-w.bgDone
+	}
 	w.session.Close()
 	w.server.Close()
 }
