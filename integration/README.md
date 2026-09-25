@@ -23,6 +23,35 @@ flowchart TB
     mta <-- communicate via milter protocol --> milter
 ```
 
+## Run the repository tests with Postfix
+
+From the repository root, build the existing integration image and select Postfix:
+
+```shell
+docker build -t go-milter-integration integration/docker
+docker run --rm --hostname=mx.example.com \
+  -e SKIP_POSTFIX_AUTH=1 \
+  -v "$PWD:/usr/src/root:ro" -w /usr/src/root/integration \
+  go-milter-integration \
+  go run github.com/d--j/go-milter/integration/runner -mtaFilter '/postfix/' ./tests
+```
+
+Postfix, the test filters, and the receiving SMTP server run inside the container.
+No container ports need to be published. The read-only mount supplies the checkout
+being tested; the runner builds the filters and creates its Postfix configuration
+and mail queue in a temporary directory. `SKIP_POSTFIX_AUTH=1` skips SMTP AUTH tests,
+matching the CI configuration.
+
+To run only the recipient-validator panic regression, replace `./tests` with
+`./tests/rcpt-panic`. Its two testcase files run in filename order against the same
+filter process: the first triggers a validator panic, and the second checks that
+a new SMTP connection can deliver a message to the receiving server.
+
+The [Postfix test configuration](mta/postfix/main.cf) explicitly sets
+`milter_default_action = reject`, so the panic case expects a permanent SMTP
+rejection. The outcome of a filter connection failure in a deployment depends on
+its MTA configuration; `tempfail`, for example, requests a temporary failure.
+
 ## Tests
 
 The integration tests are written in Go and use the `github.com/d--j/go-milter/integration` package.
