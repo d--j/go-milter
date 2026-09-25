@@ -344,7 +344,11 @@ func (s *Server) Serve(ln net.Listener) error {
 			defer s.trackSession(&session, false)
 			defer func() {
 				if r := recover(); r != nil {
-					LogWarning("panic in milter session: %v", r)
+					if s.options.onPanicCallback != nil {
+						s.options.onPanicCallback(r)
+					} else {
+						LogWarning("panic in milter session: %v", r)
+					}
 				}
 			}()
 			session.init(s, conn, s.options.maxVersion, s.options.actions, s.options.protocol)

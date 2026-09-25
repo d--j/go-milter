@@ -163,38 +163,46 @@ func (b *backend) RcptTo(rcptTo string, esmtpArgs string, m milter.Modifier) (*m
 		type ret struct {
 			Decision Decision
 			Err      error
+			Panic    any
 		}
 		done := make(chan ret)
 		go func() {
+			var dec Decision
+			var err error
+			defer func() {
+				done <- ret{dec, err, recover()}
+			}()
 			mtaCopy := *b.transaction.MTA()
 			connectCopy := *b.transaction.Connect()
 			heloCopy := *b.transaction.Helo()
-			dec, err := b.opts.rcptToValidator(ctx, &RcptToValidationInput{
+			dec, err = b.opts.rcptToValidator(ctx, &RcptToValidationInput{
 				MTA:      &mtaCopy,
 				Connect:  &connectCopy,
 				Helo:     &heloCopy,
 				MailFrom: b.transaction.MailFrom().Copy(),
 				RcptTo:   addr.NewRcptTo(rcptTo, esmtpArgs, m.Get(milter.MacroRcptMailer)),
 			})
-			done <- ret{dec, err}
 		}()
 		for {
 			select {
 			case r := <-done:
 				cancel()
+				// re-panic in this go-routine will surface it in the milter server
+				if r.Panic != nil {
+					panic(r.Panic)
+				}
 				if r.Err != nil {
 					return b.error(r.Err)
 				}
 				if r.Decision == nil || r.Decision.Equal(Accept) {
 					b.transaction.origRcptTos = append(b.transaction.origRcptTos, addr.NewRcptTo(rcptTo, esmtpArgs, m.Get(milter.MacroRcptMailer)))
 					return milter.RespContinue, nil
-				} else {
-					if r.Decision == Discard {
-						b.transaction.hasDecision = true
-						b.transaction.decision = Discard
-					}
-					return decisionToResponse(r.Decision), nil
 				}
+				if r.Decision == Discard {
+					b.transaction.hasDecision = true
+					b.transaction.decision = Discard
+				}
+				return decisionToResponse(r.Decision), nil
 			case <-ticker.C:
 				err := m.Progress()
 				if err != nil && !errors.Is(err, milter.ErrVersionTooLow) {
@@ -202,7 +210,11 @@ func (b *backend) RcptTo(rcptTo string, esmtpArgs string, m milter.Modifier) (*m
 					cancel()
 					// wait for validator function
 					r := <-done
-					// if there was no error in the validator function (e.g. it did not actually check ctx.Done())
+					// A panic will win. It should never quietly be ignored.
+					if r.Panic != nil {
+						panic(r.Panic)
+					}
+					// if there was no error in the validator function (e.g., it did not actually check ctx.Done())
 					// return the context error (it is non-nil at this point)
 					if r.Err == nil {
 						return b.error(ctx.Err())

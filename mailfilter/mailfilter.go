@@ -181,6 +181,9 @@ func New(network, address string, decision DecisionModificationFunc, opts ...Opt
 	for i, macros := range macroStages {
 		milterOptions = append(milterOptions, milter.WithMacroRequest(milter.MacroStage(i), macros))
 	}
+	if resolvedOptions.onPanicCallback != nil {
+		milterOptions = append(milterOptions, milter.WithOnPanic(resolvedOptions.onPanicCallback))
+	}
 
 	// create socket to listen on
 	socket, err := net.Listen(network, address)

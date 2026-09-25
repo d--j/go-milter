@@ -559,7 +559,7 @@ func TestMilterClient_BogusServerNegotiation(t *testing.T) {
 			}()
 			warningCalled := false
 			if ltt.onlyWarning {
-				LogWarning = func(format string, v ...interface{}) {
+				LogWarning = func(format string, v ...any) {
 					warningCalled = true
 					logWarning(format, v...)
 				}

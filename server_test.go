@@ -570,3 +570,68 @@ func TestServer_PanicRecovery(t *testing.T) {
 		})
 	}
 }
+
+func TestServer_OnPanicCallback(t *testing.T) {
+	warningChan := make(chan string, 10)
+	origLogWarning := LogWarning
+	LogWarning = func(format string, v ...any) {
+		warningChan <- fmt.Sprintf(format, v...)
+	}
+	defer func() {
+		LogWarning = origLogWarning
+	}()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	panicChan := make(chan any, 1)
+	server := NewServer(
+		WithMilter(func() Milter {
+			return &stagePanicMilter{panicAt: "Helo"}
+		}),
+		WithOnPanic(func(v any) {
+			panicChan <- v
+		}),
+	)
+	go func() {
+		_ = server.Serve(ln)
+	}()
+	defer server.Close()
+
+	client := NewClient("tcp", ln.Addr().String())
+	session, err := client.Session(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.Conn("localhost", FamilyInet, 2525, "127.0.0.1"); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = session.Helo("localhost")
+	_ = session.Close()
+
+	select {
+	case v := <-panicChan:
+		if v != "panic in Helo" {
+			t.Fatalf("onPanicCallback got %v, want %q", v, "panic in Helo")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for onPanicCallback")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := server.Shutdown(ctx); err != nil {
+		t.Fatalf("server.Shutdown failed after recovered panic: %v", err)
+	}
+
+	LogWarning = origLogWarning
+	close(warningChan)
+	for msg := range warningChan {
+		if strings.Contains(msg, "panic") {
+			t.Fatalf("LogWarning should not be called when onPanicCallback is set, got %q", msg)
+		}
+	}
+}

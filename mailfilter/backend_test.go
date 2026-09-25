@@ -843,3 +843,38 @@ func Test_backend_readyForNewMessage(t *testing.T) {
 		t.Fatal("MTA, Connect, Helo not preserved")
 	}
 }
+
+func Test_backend_RcptToPanic(t *testing.T) {
+	t.Parallel()
+	b, s := newMockBackend()
+	b.opts.rcptToValidator = func(ctx context.Context, in *RcptToValidationInput) (Decision, error) {
+		panic("panic in validator")
+	}
+	defer func() {
+		if r := recover(); r != "panic in validator" {
+			t.Fatalf("recover() = %v, expected %q", r, "panic in validator")
+		}
+	}()
+	_, _ = b.RcptTo("root@localhost", "", s.mod)
+	t.Fatalf("RcptTo() did not re-panic")
+}
+
+func Test_backend_RcptToPanicAfterProgressError(t *testing.T) {
+	t.Parallel()
+	b, s := newMockBackend()
+	b.opts.rcptToValidator = func(ctx context.Context, in *RcptToValidationInput) (Decision, error) {
+		<-ctx.Done()
+		panic("panic after cancel")
+	}
+	s.progressErr = errors.New("error")
+	defer func() {
+		if r := recover(); r != "panic after cancel" {
+			t.Fatalf("recover() = %v, expected %q", r, "panic after cancel")
+		}
+		if s.progressCalled < 1 {
+			t.Fatalf("progress not called")
+		}
+	}()
+	_, _ = b.RcptTo("root@localhost", "", s.mod)
+	t.Fatalf("RcptTo() did not re-panic")
+}
