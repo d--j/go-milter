@@ -8,9 +8,19 @@ import (
 	"io"
 	"math"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
+
+// maxUint32 and indexAboveUint32 (one past the largest header index the
+// protocol can carry) are variables, not constants, so this file compiles
+// where int is 32 bits (int(uint64(math.MaxUint32)+1) would be a constant
+// expression, and overflow there). On 32-bit indexAboveUint32 wraps, and the
+// invalid-index-2 cases are skipped, since no 32-bit int can exceed
+// math.MaxUint32.
+var maxUint32 uint64 = math.MaxUint32
+var indexAboveUint32 = int(maxUint32 + 1)
 
 func TestAction_StopProcessing(t *testing.T) {
 	tests := []struct {
@@ -428,8 +438,8 @@ func Test_modifier_ChangeHeader(t *testing.T) {
 		{"allowed", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{1, "Subject", "Test"}, &wire.Message{Code: wire.Code(wire.ActChangeHeader), Data: []byte("\u0000\u0000\u0000\u0001Subject\000Test\000")}, false},
 		{"read-only", fields{modifierStateProgressOnly, AllClientSupportedActionMasks}, args{1, "Subject", "Test"}, nil, true},
 		{"not-negotiated", fields{modifierStateReadWrite, 0}, args{1, "Subject", "Test"}, nil, true},
-		{"invalid-index-1", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{-1, "Subject:", "Test"}, nil, true},
-		{"invalid-index-2", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{math.MaxUint32 + 1, "Subject:", "Test"}, nil, true},
+		{"invalid-index-1", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{-1, "Subject", "Test"}, nil, true},
+		{"invalid-index-2", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{indexAboveUint32, "Subject", "Test"}, nil, true},
 		{"invalid-name-1", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{1, "Subject:", "Test"}, nil, true},
 		{"invalid-name-2", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{1, " Subject", "Test"}, nil, true},
 		{"invalid-name-3", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{1, "Subj\u0000ect", "Test"}, nil, true},
@@ -441,6 +451,9 @@ func Test_modifier_ChangeHeader(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if strconv.IntSize < 64 && tt.name == "invalid-index-2" {
+				t.Skip("no 32-bit int exceeds math.MaxUint32")
+			}
 			var got *wire.Message
 			writePacket := func(msg *wire.Message) error {
 				got = msg
@@ -532,8 +545,8 @@ func Test_modifier_InsertHeader(t *testing.T) {
 		{"allowed", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{1, "Subject", "Test"}, &wire.Message{Code: wire.Code(wire.ActInsertHeader), Data: []byte("\u0000\u0000\u0000\u0001Subject\000Test\000")}, false},
 		{"read-only", fields{modifierStateProgressOnly, AllClientSupportedActionMasks}, args{1, "Subject", "Test"}, nil, true},
 		{"not-negotiated", fields{modifierStateReadWrite, 0}, args{1, "Subject", "Test"}, nil, true},
-		{"invalid-index-1", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{-1, "Subject:", "Test"}, nil, true},
-		{"invalid-index-2", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{math.MaxUint32 + 1, "Subject:", "Test"}, nil, true},
+		{"invalid-index-1", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{-1, "Subject", "Test"}, nil, true},
+		{"invalid-index-2", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{indexAboveUint32, "Subject", "Test"}, nil, true},
 		{"invalid-name-1", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{1, "Subject:", "Test"}, nil, true},
 		{"invalid-name-2", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{1, " Subject", "Test"}, nil, true},
 		{"invalid-name-3", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{1, "Subj\u0000ect", "Test"}, nil, true},
@@ -545,6 +558,9 @@ func Test_modifier_InsertHeader(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if strconv.IntSize < 64 && tt.name == "invalid-index-2" {
+				t.Skip("no 32-bit int exceeds math.MaxUint32")
+			}
 			var got *wire.Message
 			writePacket := func(msg *wire.Message) error {
 				got = msg

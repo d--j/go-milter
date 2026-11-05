@@ -552,7 +552,7 @@ func (m *modifier) ChangeHeader(index int, name, value string) error {
 	if m.actions&OptChangeHeader == 0 {
 		return ErrModificationNotAllowed
 	}
-	if index < 0 || index > math.MaxUint32 {
+	if index < 0 || int64(index) > math.MaxUint32 {
 		return fmt.Errorf("milter: invalid header index: %d", index)
 	}
 	if !validName(name) {
@@ -573,7 +573,7 @@ func (m *modifier) InsertHeader(index int, name, value string) error {
 	if m.actions&OptChangeHeader == 0 && m.actions&OptAddHeader == 0 {
 		return ErrModificationNotAllowed
 	}
-	if index < 0 || index > math.MaxUint32 {
+	if index < 0 || int64(index) > math.MaxUint32 {
 		return fmt.Errorf("milter: invalid header index: %d", index)
 	}
 	if !validName(name) {
