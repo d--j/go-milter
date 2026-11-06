@@ -4,23 +4,14 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/d--j/go-milter/internal/wire"
 	"io"
 	"math"
 	"reflect"
-	"strconv"
 	"strings"
 	"testing"
-)
 
-// maxUint32 and indexAboveUint32 (one past the largest header index the
-// protocol can carry) are variables, not constants, so this file compiles
-// where int is 32 bits (int(uint64(math.MaxUint32)+1) would be a constant
-// expression, and overflow there). On 32-bit indexAboveUint32 wraps, and the
-// invalid-index-2 cases are skipped, since no 32-bit int can exceed
-// math.MaxUint32.
-var maxUint32 uint64 = math.MaxUint32
-var indexAboveUint32 = int(maxUint32 + 1)
+	"github.com/d--j/go-milter/internal/wire"
+)
 
 func TestAction_StopProcessing(t *testing.T) {
 	tests := []struct {
@@ -424,7 +415,7 @@ func Test_modifier_ChangeHeader(t *testing.T) {
 		actions OptAction
 	}
 	type args struct {
-		index int
+		index int64
 		name  string
 		value string
 	}
@@ -439,7 +430,9 @@ func Test_modifier_ChangeHeader(t *testing.T) {
 		{"read-only", fields{modifierStateProgressOnly, AllClientSupportedActionMasks}, args{1, "Subject", "Test"}, nil, true},
 		{"not-negotiated", fields{modifierStateReadWrite, 0}, args{1, "Subject", "Test"}, nil, true},
 		{"invalid-index-1", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{-1, "Subject", "Test"}, nil, true},
-		{"invalid-index-2", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{indexAboveUint32, "Subject", "Test"}, nil, true},
+		{"max-index", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{math.MaxInt32, "Subject", "Test"}, &wire.Message{Code: wire.Code(wire.ActChangeHeader), Data: []byte("\x7f\xff\xff\xffSubject\000Test\000")}, false},
+		// On 32-bit platforms int(math.MaxInt32 + 1) wraps to math.MinInt32, so this case exercises the index < 0 check there.
+		{"invalid-index-2", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{math.MaxInt32 + 1, "Subject", "Test"}, nil, true},
 		{"invalid-name-1", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{1, "Subject:", "Test"}, nil, true},
 		{"invalid-name-2", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{1, " Subject", "Test"}, nil, true},
 		{"invalid-name-3", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{1, "Subj\u0000ect", "Test"}, nil, true},
@@ -451,9 +444,6 @@ func Test_modifier_ChangeHeader(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if strconv.IntSize < 64 && tt.name == "invalid-index-2" {
-				t.Skip("no 32-bit int exceeds math.MaxUint32")
-			}
 			var got *wire.Message
 			writePacket := func(msg *wire.Message) error {
 				got = msg
@@ -466,7 +456,7 @@ func Test_modifier_ChangeHeader(t *testing.T) {
 				actions:     tt.fields.actions,
 				maxDataSize: DataSize64K,
 			}
-			if err := m.ChangeHeader(tt.args.index, tt.args.name, tt.args.value); (err != nil) != tt.wantErr {
+			if err := m.ChangeHeader(int(tt.args.index), tt.args.name, tt.args.value); (err != nil) != tt.wantErr {
 				t.Errorf("ChangeHeader() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
@@ -531,7 +521,7 @@ func Test_modifier_InsertHeader(t *testing.T) {
 		actions OptAction
 	}
 	type args struct {
-		index int
+		index int64
 		name  string
 		value string
 	}
@@ -546,7 +536,9 @@ func Test_modifier_InsertHeader(t *testing.T) {
 		{"read-only", fields{modifierStateProgressOnly, AllClientSupportedActionMasks}, args{1, "Subject", "Test"}, nil, true},
 		{"not-negotiated", fields{modifierStateReadWrite, 0}, args{1, "Subject", "Test"}, nil, true},
 		{"invalid-index-1", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{-1, "Subject", "Test"}, nil, true},
-		{"invalid-index-2", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{indexAboveUint32, "Subject", "Test"}, nil, true},
+		{"max-index", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{math.MaxInt32, "Subject", "Test"}, &wire.Message{Code: wire.Code(wire.ActInsertHeader), Data: []byte("\x7f\xff\xff\xffSubject\000Test\000")}, false},
+		// On 32-bit platforms int(math.MaxInt32 + 1) wraps to math.MinInt32, so this case exercises the index < 0 check there.
+		{"invalid-index-2", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{math.MaxInt32 + 1, "Subject", "Test"}, nil, true},
 		{"invalid-name-1", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{1, "Subject:", "Test"}, nil, true},
 		{"invalid-name-2", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{1, " Subject", "Test"}, nil, true},
 		{"invalid-name-3", fields{modifierStateReadWrite, AllClientSupportedActionMasks}, args{1, "Subj\u0000ect", "Test"}, nil, true},
@@ -558,9 +550,6 @@ func Test_modifier_InsertHeader(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if strconv.IntSize < 64 && tt.name == "invalid-index-2" {
-				t.Skip("no 32-bit int exceeds math.MaxUint32")
-			}
 			var got *wire.Message
 			writePacket := func(msg *wire.Message) error {
 				got = msg
@@ -573,7 +562,7 @@ func Test_modifier_InsertHeader(t *testing.T) {
 				actions:     tt.fields.actions,
 				maxDataSize: DataSize64K,
 			}
-			if err := m.InsertHeader(tt.args.index, tt.args.name, tt.args.value); (err != nil) != tt.wantErr {
+			if err := m.InsertHeader(int(tt.args.index), tt.args.name, tt.args.value); (err != nil) != tt.wantErr {
 				t.Errorf("InsertHeader() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}

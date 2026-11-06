@@ -8,12 +8,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/d--j/go-milter/internal/wire"
-	"github.com/d--j/go-milter/milterutil"
 	"io"
 	"math"
 	"net/textproto"
 	"strings"
+
+	"github.com/d--j/go-milter/internal/wire"
+	"github.com/d--j/go-milter/milterutil"
 )
 
 type ActionType int
@@ -398,6 +399,7 @@ type Modifier interface {
 	// The index is per canonical header name and one-based. To delete a header, pass an empty value.
 	// If the index is bigger than there are headers with that name, then ChangeHeader will actually
 	// add a new header at the end of the header list (With the same semantic as AddHeader).
+	// index must be between 0 and math.MaxInt32; other values return an error.
 	//
 	// The header name must be valid. It can only contain printable ASCII characters without SP and colon.
 	//
@@ -410,6 +412,7 @@ type Modifier interface {
 	// index is one-based. Index 0 means at the very beginning.
 	// If the index is bigger than the number of headers, then the header will be added at the end.
 	// Unlike ChangeHeader, the index is not per canonical header name but the index in the list of all headers.
+	// index must be between 0 and math.MaxInt32; other values return an error.
 	//
 	// The header name must be valid. It can only contain printable ASCII characters without SP and colon.
 	//
@@ -552,7 +555,7 @@ func (m *modifier) ChangeHeader(index int, name, value string) error {
 	if m.actions&OptChangeHeader == 0 {
 		return ErrModificationNotAllowed
 	}
-	if index < 0 || int64(index) > math.MaxUint32 {
+	if index < 0 || index > math.MaxInt32 {
 		return fmt.Errorf("milter: invalid header index: %d", index)
 	}
 	if !validName(name) {
@@ -573,7 +576,7 @@ func (m *modifier) InsertHeader(index int, name, value string) error {
 	if m.actions&OptChangeHeader == 0 && m.actions&OptAddHeader == 0 {
 		return ErrModificationNotAllowed
 	}
-	if index < 0 || int64(index) > math.MaxUint32 {
+	if index < 0 || index > math.MaxInt32 {
 		return fmt.Errorf("milter: invalid header index: %d", index)
 	}
 	if !validName(name) {
