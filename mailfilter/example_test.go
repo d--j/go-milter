@@ -48,7 +48,7 @@ func ExampleNew() {
 		mailfilter.WithDecisionAt(mailfilter.DecisionAtEndOfHeaders),
 	)
 	if err != nil {
-		log.Println(err)
+		log.Fatal(err)
 	}
 	log.Printf("Started milter on %s:%s", filter.Addr().Network(), filter.Addr().String())
 
