@@ -1,0 +1,9 @@
+TO <recovered@example.com>
+BODY
+Message delivered after the recipient validator panic.
+.
+DECISION ACCEPT
+TO <recovered@example.com> *
+BODY
+Message delivered after the recipient validator panic.
+.
